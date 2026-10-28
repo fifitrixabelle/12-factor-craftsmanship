@@ -1,9 +1,10 @@
 # 12 Factor Craftsmanship
 
-An agent skill that helps AI coding agents build and review software using two sources:
+An agent skill that helps AI coding agents build and review software using three complementary perspectives:
 
 - [The Twelve-Factor App](https://12factor.net/): how the software runs.
 - [The Manifesto for Software Craftsmanship](https://manifesto.softwarecraftsmanship.org/): how the software is made.
+- **Perl philosophy:** [Larry Wall's three virtues](https://perldoc.perl.org/perlglossary#hubris), [Huffman coding for common operations](https://www.perl.com/pub/2001/10/02/apocalypse3.html/), and related design principles. Make common tasks easy, choose approaches that fit, keep behavior predictable, and balance laziness, impatience, and hubris with diligence, patience, and humility.
 
 The skill is one file, [`skills/12-factor-craftsmanship/SKILL.md`](skills/12-factor-craftsmanship/SKILL.md). It uses the open [Agent Skills](https://agentskills.io) format, so any agent that reads `SKILL.md` files can load it.
 
@@ -44,4 +45,4 @@ The agent loads the skill when a task fits: designing a service, adding config, 
 
 ## License
 
-MIT. The Twelve-Factor App and the Software Craftsmanship manifesto belong to their authors. This skill summarizes them in its own words and links to the originals.
+MIT. The Twelve-Factor App, the Software Craftsmanship manifesto, and the cited Perl writings belong to their authors. This skill summarizes and adapts their ideas in its own words and links to the originals.

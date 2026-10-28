@@ -5,7 +5,7 @@
     {
       "name": "12-factor-craftsmanship",
       "source": "./",
-      "description": "Build and review software with the Twelve-Factor App and Software Craftsmanship principles"
+      "description": "Build and review software with the Twelve-Factor App, Software Craftsmanship, and Perl philosophy"
     }
   ]
 }
