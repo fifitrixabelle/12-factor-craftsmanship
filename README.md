@@ -68,6 +68,8 @@ The skill contains direct instructions for scoping changes, writing maintainable
 
 It also adds **factor 13: convention over configuration**, adapted from [David Heinemeier Hansson's Rails Doctrine](https://rubyonrails.org/doctrine#convention-over-configuration). Use established conventions for routine structure and wiring, with explicit overrides for real exceptions. Deployment-specific values remain external. This is an extension in this skill, separate from the original Twelve-Factor App.
 
+We cite David Heinemeier Hansson (DHH) solely for convention over configuration. This project does not endorse anything else he has said or written.
+
 ## Further sources
 
 This bibliography covers the ideas incorporated into the skill, including the foundations linked above. The practical instructions are this project's adaptations; the sources do not prescribe or endorse the whole combined skill.
