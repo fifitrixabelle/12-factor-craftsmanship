@@ -1,0 +1,11 @@
+{
+  "name": "12-factor-craftsmanship",
+  "owner": { "name": "fifitrixabelle" },
+  "plugins": [
+    {
+      "name": "12-factor-craftsmanship",
+      "source": "./",
+      "description": "Build and review software with the Twelve-Factor App and Software Craftsmanship principles"
+    }
+  ]
+}
