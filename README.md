@@ -12,6 +12,15 @@ That approach reflects the [ongoing evolution of Twelve-Factor](https://github.c
 
 The skill is one file, [`skills/12-factor-craftsmanship/SKILL.md`](skills/12-factor-craftsmanship/SKILL.md). It uses the open [Agent Skills](https://agentskills.io) format, so any agent that reads `SKILL.md` files can load it.
 
+The skill contains direct instructions for scoping changes, writing maintainable code, designing interfaces, checking service operation, and verifying results. Background and sources live here so agents can spend their context on actionable guidance.
+
+## Further sources
+
+- [Beyond the Twelve-Factor App](https://www.oreilly.com/library/view/beyond-the-twelve-factor/9781492042631/): extends the discussion to API design, telemetry, and authentication and authorization.
+- [Programming Perl: Natural and Artificial Languages](https://www.oreilly.com/library/view/programming-perl-3rd/0596000278/ch01s02.html): making easy things easy and hard things possible.
+- [Perl 6 Design Philosophy](https://www.perl.com/pub/2003/06/25/perl6essentials.html/): DWIM and the waterbed theory of complexity.
+- [Larry Wall: Diligence, Patience, and Humility](https://www.oreilly.com/openbook/opensources/book/larry.html): complementary virtues and more than one way to do it.
+
 ## Install
 
 ### Claude Code (recommended)
