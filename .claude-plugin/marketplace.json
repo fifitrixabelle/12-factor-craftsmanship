@@ -1,5 +1,6 @@
 {
   "name": "12-factor-craftsmanship",
+  "description": "Practical coding and review checks for maintainability, interface design, and reliable service operation",
   "owner": { "name": "fifitrixabelle" },
   "plugins": [
     {
