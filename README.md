@@ -51,6 +51,14 @@ The agent loads the skill when a task fits: designing a service, adding config, 
 
 > Review this service with the 12-factor-craftsmanship skill.
 
+### Examples of applying judgment
+
+Judge an adaptation by the outcome it preserves and the failure case it handles. In reviews, distinguish demonstrated defects, risks that depend on an unverified assumption, and optional improvements.
+
+- **A sound adaptation:** A managed function uses the platform's invocation handler instead of binding a port. Verify that requests reach the handler and that failures propagate through the platform's invocation contract. The invocation mechanism changes while the service remains accessible through its supported interface; adding an HTTP listener would not improve that outcome.
+- **An unsafe shortcut:** A payment integration retries after a timeout using a new idempotency key for every attempt. The first attempt may already have charged the customer, so the retries can create duplicate charges. Reuse the key for the same logical payment or reconcile its outcome before retrying. If the provider's duplicate-prevention behavior is unknown, report a conditional risk and identify the provider contract or integration check needed to resolve it.
+- **A difference that needs no finding:** Two small validation functions look similar, but one implements a shipping rule and the other a billing rule, and those rules change independently. Similar syntax alone does not justify coupling them in a shared helper. Retain the duplication unless evidence shows that both callers must follow the same rule.
+
 ## Principles and sources
 
 The cited principles give names and context to lessons reinforced by practical experience. Their age is not a reason to follow them unquestioningly or discard them: judge them by whether they help deliver reliable, maintainable software today. Its foundations include:

@@ -1,7 +1,7 @@
 {
   "name": "12-factor-craftsmanship",
   "description": "Practical coding and review checks for maintainability, interface design, and reliable service operation",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": { "name": "fifitrixabelle" },
   "repository": "https://github.com/fifitrixabelle/12-factor-craftsmanship",
   "license": "MIT"

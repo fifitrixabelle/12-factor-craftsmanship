@@ -10,7 +10,7 @@ description: Use when implementing, changing, designing, or reviewing services, 
 1. Read project instructions, the affected code, its callers, and relevant tests. Include framework discovery and lifecycle hooks when tracing behavior.
 2. Identify the requested behavior and the constraints that affect it: compatibility, runtime, data durability, security, and deployment. Apply only checks relevant to the change.
 3. Preserve behavior outside the request. Keep unrelated cleanup separate; prefer changes that can be reviewed and reverted independently.
-4. Start with the defaults below. When a requirement or platform makes one unsuitable, choose an alternative that meets the underlying need. Explain material trade-offs and verification in the existing review or decision record; routine choices need no extra document or approval.
+4. Start with the defaults below. When a requirement or platform makes one unsuitable, identify the outcome it protects, choose an alternative that preserves that outcome, and verify the relevant failure case. Explain material trade-offs and verification in the existing review or decision record; routine choices need no extra document or approval.
 
 ## Write maintainable code
 
@@ -67,3 +67,4 @@ For changes to exposed interfaces or data access, verify input validation, authe
 - Inspect the final diff for unintended changes, exposed credentials, and unnecessary complexity.
 - Report what changed, which checks ran and their results, and remaining failures or limits. State when a required environment or check was unavailable. Claim success only for outcomes supported by observed results.
 - For reviews, report `location → concrete consequence → proportionate fix`, naming the relevant principle when useful. Rank security and data-loss risks first. Establish a concrete risk or cost before flagging a departure from a default.
+- Separate demonstrated defects, conditional risks, and optional improvements. State the assumptions and evidence needed to resolve conditional risks. An omitted recommendation or a difference from a cited source alone does not establish a defect; assess whether the underlying outcome is preserved.
