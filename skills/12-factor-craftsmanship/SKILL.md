@@ -53,6 +53,10 @@ For each area the change touches, apply the relevant checks below. For libraries
 11. **Logs and telemetry:** Use structured stdout/stderr on platforms that collect process output, or their supported telemetry interfaces. Add metrics and traces needed to diagnose changed behavior. Keep sensitive data out of telemetry and delegate routing and rotation to the platform where supported.
 12. **Admin processes:** Version migrations and management tools. Run them against the intended release and environment with appropriate access; make failures and retries safe.
 
+## Additional factor
+
+13. **Convention over configuration:** Use established framework and project conventions for naming, file placement, discovery, and wiring. Remove configuration that merely restates those conventions. Provide explicit overrides for demonstrated exceptions and make the effective behavior easy to inspect. Keep deploy-specific values such as credentials and service endpoints external, as in factor 3.
+
 When changing exposed interfaces or access to data, check input validation, authentication, authorization, and failure behavior. Match these checks to the actual exposure and requirements.
 
 ## Verify and report

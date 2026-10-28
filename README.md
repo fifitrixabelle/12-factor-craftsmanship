@@ -14,6 +14,8 @@ The skill is one file, [`skills/12-factor-craftsmanship/SKILL.md`](skills/12-fac
 
 The skill contains direct instructions for scoping changes, writing maintainable code, designing interfaces, checking service operation, and verifying results. Background and sources live here so agents can spend their context on actionable guidance.
 
+It also adds **factor 13: convention over configuration**, inspired by [Rails](https://guides.rubyonrails.org/v8.1/active_record_basics.html#convention-over-configuration-in-active-record). Use established conventions for routine structure and wiring, with explicit overrides for real exceptions. Deployment-specific values remain external. This is an extension in this skill, separate from the original Twelve-Factor App.
+
 ## Further sources
 
 - [Beyond the Twelve-Factor App](https://www.oreilly.com/library/view/beyond-the-twelve-factor/9781492042631/): extends the discussion to API design, telemetry, and authentication and authorization.
