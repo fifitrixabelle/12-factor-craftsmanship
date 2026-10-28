@@ -6,6 +6,8 @@ Wrong abstractions make every change harder. Hidden wiring makes behavior diffic
 
 It mixes ideas from Twelve-Factor, Software Craftsmanship, Perl, Rails, typed functional programming, Eiffel, Clojure, Go, Erlang/OTP, and htmx. Borrow the techniques that fit the task, verify the outcome, and revise the approach when the evidence changes. No particular language or stack is required.
 
+It also draws on first-hand experience delivering and operating production applications across a wide range of environments, stacks, and constraints. Some citations are decades old; the problems they help address still turn up in production. The checks bring those ideas together with lessons from delivery, maintenance, and failure recovery, and adapt them to the environment at hand.
+
 ## Install
 
 ### Claude Code (recommended)
@@ -51,7 +53,7 @@ The agent loads the skill when a task fits: designing a service, adding config, 
 
 ## Principles and sources
 
-Its foundations include:
+The cited principles give names and context to lessons reinforced by practical experience. Their age is not a reason to follow them unquestioningly or discard them: judge them by whether they help deliver reliable, maintainable software today. Its foundations include:
 
 - [The Twelve-Factor App](https://12factor.net/): how the software runs.
 - [The Manifesto for Software Craftsmanship](https://manifesto.softwarecraftsmanship.org/): how the software is made.
@@ -61,6 +63,8 @@ Its foundations include:
 These are starting points for judgment. The skill identifies the goal behind a rule, checks whether its usual implementation fits, and verifies the outcome. It explains meaningful trade-offs and revisits decisions when requirements, platforms, or evidence change. Use the right tool for the right job, including when that means changing an earlier choice.
 
 That approach reflects the [ongoing evolution of Twelve-Factor](https://github.com/twelve-factor/twelve-factor/blob/next/UPDATE_FAQ.md), which separates enduring principles from changing implementation guidance, and [Sandi Metz's The Wrong Abstraction](https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction), which explains why a once-useful abstraction may need to be undone. For example, mounted configuration can preserve separation from code, a managed function need not bind its own port, and temporary duplication can be better than coupling unrelated behavior. Security, observability, and other production needs must also be considered where relevant.
+
+Modern tools and guidance often revisit the same concerns with new terminology and implementations. We see that continuity in the [AWS Builders' Library guidance on timeouts, retries, and backoff](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/), which addresses bounded recovery and safe repetition, and [OpenTelemetry's signals](https://opentelemetry.io/docs/concepts/signals/), which bring traces, metrics, and logs into a common observability framework. These are contemporary expressions and extensions of recurring engineering lessons; the practical question remains how well a technique serves the application and its operators.
 
 The skill is one file, [`skills/12-factor-craftsmanship/SKILL.md`](skills/12-factor-craftsmanship/SKILL.md). It uses the open [Agent Skills](https://agentskills.io) format, so any agent that reads `SKILL.md` files can load it.
 
@@ -82,6 +86,8 @@ This bibliography covers the ideas incorporated into the skill, including the fo
 | [Manifesto for Software Craftsmanship — the Software Craftsmanship community](https://manifesto.softwarecraftsmanship.org/) | Maintainable software, continued value, professional collaboration, and productive partnerships. Informs **Write maintainable code** and **Verify and report**. |
 | [Twelve-Factor Update FAQ — Twelve-Factor maintainers](https://github.com/twelve-factor/twelve-factor/blob/next/UPDATE_FAQ.md) | Separate principles from examples and evolve guidance with platforms and workloads. Informs **Scope the change** and contextual adaptations of the service checks. This describes an update effort, not a replacement specification adopted wholesale here. |
 | [Beyond the Twelve-Factor App — Kevin Hoffman](https://www.oreilly.com/library/view/beyond-the-twelve-factor/9781492042631/) | Broader consideration of API design, telemetry, authentication, and authorization. Informs the interface, observability, and access checks. |
+| [Timeouts, retries, and backoff with jitter — Marc Brooker, AWS Builders' Library](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/) | Production experience with transient failures, retry amplification, backoff, jitter, and idempotency. Reinforces the timeout and retry checks. |
+| [Signals — OpenTelemetry contributors](https://opentelemetry.io/docs/concepts/signals/) | Traces, metrics, and logs as complementary telemetry signals. A modern reference for the observability checks. |
 
 ### Perl principles and programmer virtues
 
