@@ -9,20 +9,27 @@ The skill is one file, [`skills/12-factor-craftsmanship/SKILL.md`](skills/12-fac
 
 ## Install
 
+### Claude Code (recommended)
+
+Inside Claude Code, run:
+
+```
+/plugin install 12-factor-craftsmanship --marketplace fifitrixabelle/12-factor-craftsmanship
+```
+
+On Claude Code versions before 2.1.275, add the marketplace first:
+
+```
+/plugin marketplace add fifitrixabelle/12-factor-craftsmanship
+/plugin install 12-factor-craftsmanship@12-factor-craftsmanship
+```
+
+To pick up new versions, run `/plugin marketplace update 12-factor-craftsmanship`.
+
 ### Any agent, with the `skills` CLI
 
 ```bash
 npx skills add fifitrixabelle/12-factor-craftsmanship
-```
-
-### Claude Code, by hand
-
-```bash
-git clone https://github.com/fifitrixabelle/12-factor-craftsmanship.git
-# For all projects:
-cp -r 12-factor-craftsmanship/skills/12-factor-craftsmanship ~/.claude/skills/
-# Or for one project only:
-cp -r 12-factor-craftsmanship/skills/12-factor-craftsmanship .claude/skills/
 ```
 
 ### Other agents
