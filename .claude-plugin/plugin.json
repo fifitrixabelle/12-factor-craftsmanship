@@ -1,7 +1,7 @@
 {
   "name": "12-factor-craftsmanship",
-  "description": "Build and review software with the Twelve-Factor App, Software Craftsmanship, and Perl philosophy",
-  "version": "1.0.0",
+  "description": "Practical coding and review checks for maintainability, interface design, and reliable service operation",
+  "version": "1.1.0",
   "author": { "name": "fifitrixabelle" },
   "repository": "https://github.com/fifitrixabelle/12-factor-craftsmanship",
   "license": "MIT"

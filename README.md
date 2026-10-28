@@ -1,8 +1,55 @@
 # 12 Factor Craftsmanship
 
-An agent skill for AI coding agents: a practical mix of principles and ideas from different programming languages, frameworks, and engineering communities. It combines Twelve-Factor, Software Craftsmanship, Perl, Rails, typed functional programming, Eiffel, Clojure, Go, Erlang/OTP, and htmx into instructions agents can apply while building and reviewing software.
+**Lessons learnt the hard way, turned into practical checks for coding agents.**
 
-Each idea earns its place through a concrete action: model valid states, make contracts explicit, keep behavior discoverable, reduce coupling, limit interface size, or recover safely from failures. Apply the ideas that fit the task, language, platform, and team, and verify that they improve the result. The skill borrows useful techniques without requiring their original language or stack.
+Wrong abstractions make every change harder. Hidden wiring makes behavior difficult to trace. Unsafe retries repeat side effects. Unchecked defaults change behavior across deployments. This skill turns those failure patterns into actions agents can take before delivering a change.
+
+It mixes ideas from Twelve-Factor, Software Craftsmanship, Perl, Rails, typed functional programming, Eiffel, Clojure, Go, Erlang/OTP, and htmx. Borrow the techniques that fit the task, verify the outcome, and revise the approach when the evidence changes. No particular language or stack is required.
+
+## Install
+
+### Claude Code (recommended)
+
+Inside Claude Code, run:
+
+```
+/plugin install 12-factor-craftsmanship --marketplace fifitrixabelle/12-factor-craftsmanship
+```
+
+On Claude Code versions before 2.1.275, add the marketplace first:
+
+```
+/plugin marketplace add fifitrixabelle/12-factor-craftsmanship
+/plugin install 12-factor-craftsmanship@12-factor-craftsmanship
+```
+
+### Update the Claude Code plugin
+
+In your shell, run:
+
+```bash
+claude plugin update 12-factor-craftsmanship@12-factor-craftsmanship
+```
+
+Then run `/reload-plugins` inside an existing Claude Code session, or start a new session. Refreshing the marketplace listing alone does not update the loaded plugin.
+
+### Any agent, with the `skills` CLI
+
+```bash
+npx skills add fifitrixabelle/12-factor-craftsmanship
+```
+
+### Other agents
+
+Copy `skills/12-factor-craftsmanship/` into your agent's skills directory. If your agent has no skills support, paste the body of `SKILL.md` into its instructions file (`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and so on).
+
+## Use
+
+The agent loads the skill when a task fits: designing a service, adding config, logging, or background jobs, setting up deployment, or reviewing code for production readiness. Reviews focus on concrete risks and maintenance costs; a justified departure from a default is not automatically a defect. You can also ask for it by name:
+
+> Review this service with the 12-factor-craftsmanship skill.
+
+## Principles and sources
 
 Its foundations include:
 
@@ -23,51 +70,45 @@ It also adds **factor 13: convention over configuration**, adapted from [David H
 
 ## Further sources
 
-- [Scott Wlaschin: Making Illegal States Unrepresentable](https://fsharpforfunandprofit.com/posts/designing-with-types-making-illegal-states-unrepresentable/): model valid domain states with types and validate values at boundaries.
-- [Eiffel: Design by Contract and Assertions](https://www.eiffel.org/doc/solutions/Design_by_Contract_and_Assertions): make preconditions, postconditions, and invariants explicit.
-- [Carson Gross: Locality of Behaviour](https://htmx.org/essays/locality-of-behaviour/): make behavior discoverable near its point of use without exposing implementation details.
-- [Rich Hickey: Simple Made Easy](https://www.infoq.com/presentations/Simple-Made-Easy/): assess simplicity by separating intertwined concerns, rather than by familiarity or convenience.
-- [Rob Pike: Go Proverbs](https://go-proverbs.github.io/): keep interfaces small and weigh dependencies against modest local implementations.
-- [Erlang/OTP: Supervision Principles](https://www.erlang.org/doc/system/sup_princ.html): isolate failures and define supervised, bounded recovery where the runtime supports it.
-- [Beyond the Twelve-Factor App](https://www.oreilly.com/library/view/beyond-the-twelve-factor/9781492042631/): extends the discussion to API design, telemetry, and authentication and authorization.
-- [Programming Perl: Natural and Artificial Languages](https://www.oreilly.com/library/view/programming-perl-3rd/0596000278/ch01s02.html): making easy things easy and hard things possible.
-- [Perl 6 Design Philosophy](https://www.perl.com/pub/2003/06/25/perl6essentials.html/): DWIM and the waterbed theory of complexity.
-- [Larry Wall: Diligence, Patience, and Humility](https://www.oreilly.com/openbook/opensources/book/larry.html): complementary virtues and more than one way to do it.
+This bibliography covers the ideas incorporated into the skill, including the foundations linked above. The practical instructions are this project's adaptations; the sources do not prescribe or endorse the whole combined skill.
 
-## Install
+### Service operation and craftsmanship
 
-### Claude Code (recommended)
+| Source and attribution | Ideas used in the skill |
+| --- | --- |
+| [The Twelve-Factor App — Adam Wiggins](https://12factor.net/) | The original twelve areas: codebase, dependencies, config, backing services, build/release/run, processes, port binding, concurrency, disposability, environment parity, logs, and admin processes. Informs **Check service operation**. |
+| [Manifesto for Software Craftsmanship — the Software Craftsmanship community](https://manifesto.softwarecraftsmanship.org/) | Maintainable software, continued value, professional collaboration, and productive partnerships. Informs **Write maintainable code** and **Verify and report**. |
+| [Twelve-Factor Update FAQ — Twelve-Factor maintainers](https://github.com/twelve-factor/twelve-factor/blob/next/UPDATE_FAQ.md) | Separate principles from examples and evolve guidance with platforms and workloads. Informs **Scope the change** and contextual adaptations of the service checks. This describes an update effort, not a replacement specification adopted wholesale here. |
+| [Beyond the Twelve-Factor App — Kevin Hoffman](https://www.oreilly.com/library/view/beyond-the-twelve-factor/9781492042631/) | Broader consideration of API design, telemetry, authentication, and authorization. Informs the interface, observability, and access checks. |
 
-Inside Claude Code, run:
+### Perl principles and programmer virtues
 
-```
-/plugin install 12-factor-craftsmanship --marketplace fifitrixabelle/12-factor-craftsmanship
-```
+| Source and attribution | Ideas used in the skill |
+| --- | --- |
+| [Perl Glossary — Perl documentation contributors](https://perldoc.perl.org/perlglossary) | Definitions of [laziness](https://perldoc.perl.org/perlglossary#laziness), [impatience](https://perldoc.perl.org/perlglossary#impatience), and [hubris](https://perldoc.perl.org/perlglossary#hubris), associated with Larry Wall. Informs **Apply the programmer virtues**: reduce future work, remove wasted time, and own the result. |
+| [Apocalypse 3 — Larry Wall](https://www.perl.com/pub/2001/10/02/apocalypse3.html/) | Huffman coding as a language-design analogy: frequently used operations deserve shorter forms. Adapted to common API calls and workflows in **Design for people**; the historical syntax proposals are not instructions for current Perl. |
+| [Programming Perl: Natural and Artificial Languages — Larry Wall, Tom Christiansen, and Jon Orwant](https://www.oreilly.com/library/view/programming-perl-3rd/0596000278/ch01s02.html) | Make easy things easy and hard things possible. Informs simple defaults with explicit support for demonstrated advanced needs. |
+| [Perl 6 Design Philosophy — Allison Randal, Dan Sugalski, and Leopold Tötsch](https://www.perl.com/pub/2003/06/25/perl6essentials.html/) | DWIM and the waterbed theory of complexity. Informs predictable interfaces and assessing complexity across callers, implementation, and operation. Used for design ideas, not current language documentation. |
+| [Diligence, Patience, and Humility — Larry Wall](https://www.oreilly.com/openbook/opensources/book/larry.html) | Complementary virtues and the recognition of multiple valid approaches. Informs investigation, collaboration, revising assumptions, and the practical interpretation of TMTOWTDI. |
 
-On Claude Code versions before 2.1.275, add the marketplace first:
+### Design, interfaces, and recovery
 
-```
-/plugin marketplace add fifitrixabelle/12-factor-craftsmanship
-/plugin install 12-factor-craftsmanship@12-factor-craftsmanship
-```
+| Source and attribution | Ideas used in the skill |
+| --- | --- |
+| [The Rails Doctrine: Convention over Configuration — David Heinemeier Hansson](https://rubyonrails.org/doctrine#convention-over-configuration) | Use shared conventions to avoid repeated decisions and redundant wiring; weigh exceptions. Informs **factor 13**, this skill's extension to the original twelve. |
+| [The Wrong Abstraction — Sandi Metz](https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction) | Reconsider shared code when changing requirements produce flags and unrelated branches. Informs inspecting callers and separating unsuitable shared behavior while allowing duplication. |
+| [Designing with Types: Making Illegal States Unrepresentable — Scott Wlaschin](https://fsharpforfunandprofit.com/posts/designing-with-types-making-illegal-states-unrepresentable/) | Encode valid domain states with variants and constrained construction. Informs state modeling and validation at boundaries; the article credits the phrase to Yaron Minsky. |
+| [Design by Contract and Assertions — Eiffel documentation](https://www.eiffel.org/doc/solutions/Design_by_Contract_and_Assertions) | Preconditions, postconditions, invariants, and caller/supplier responsibilities. Adapted to types, validation, assertions, and tests without requiring Eiffel. |
+| [Locality of Behaviour — Carson Gross](https://htmx.org/essays/locality-of-behaviour/) | Make behavior discoverable near its point of use while retaining implementation boundaries. Informs explicit calls and keeping related behavior close; the essay builds on Richard P. Gabriel's discussion of locality. |
+| [Simple Made Easy — Rich Hickey](https://www.infoq.com/presentations/Simple-Made-Easy/) | Distinguish simplicity from convenience and familiarity; reduce intertwined concerns. Informs separating business rules, I/O, and mutable state where this reduces coupling. |
+| [Go Proverbs — Rob Pike](https://go-proverbs.github.io/) | Small interfaces, clarity, and weighing a little copying against a dependency. Informs consumer-focused interfaces and comparing dependency costs with a small local implementation. |
+| [Supervisor Behaviour: Supervision Principles — Erlang/OTP documentation](https://www.erlang.org/doc/system/sup_princ.html) | Supervised processes, restart strategies, and restart intensity limits. Informs failure isolation and bounded recovery where runtime or platform supervision is available. |
 
-To pick up new versions, run `/plugin marketplace update 12-factor-craftsmanship`.
+The selection, ordering, verification/reporting format, and advice to use the right tool for the right job are editorial synthesis. Runtime-specific adaptations—such as mounted configuration, managed-function handlers, and platform telemetry—must be checked against the target platform's documentation when applied.
 
-### Any agent, with the `skills` CLI
+## Releases
 
-```bash
-npx skills add fifitrixabelle/12-factor-craftsmanship
-```
-
-### Other agents
-
-Copy `skills/12-factor-craftsmanship/` into your agent's skills directory. If your agent has no skills support, paste the body of `SKILL.md` into its instructions file (`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and so on).
-
-## Use
-
-The agent loads the skill when a task fits: designing a service, adding config, logging, or background jobs, setting up deployment, or reviewing code for production readiness. Reviews focus on concrete risks and maintenance costs; a justified departure from a default is not automatically a defect. You can also ask for it by name:
-
-> Review this service with the 12-factor-craftsmanship skill.
+For each release that changes the plugin or skill, increment `version` in `.claude-plugin/plugin.json` and validate the plugin with `claude plugin validate --strict .` before pushing. An unchanged manifest version can leave installed users on the old copy even after new commits. See [Claude Code's publishing guidance](https://code.claude.com/docs/en/plugins/publish#prepare-your-plugin-for-release).
 
 ## License
 

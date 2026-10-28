@@ -1,73 +1,69 @@
 ---
 name: 12-factor-craftsmanship
-description: Use when designing a service, adding config, dependencies, logging, background jobs, deployment or Docker setup, reviewing code for production-readiness, or when the user mentions "12 factor", "twelve-factor", "craftsmanship", "cloud-native", "well-crafted code", "Larry Wall", Perl design principles, Huffman coding in API design, TMTOWTDI, DWIM, or the programmer virtues of laziness, impatience, and hubris.
+description: Use when implementing, changing, designing, or reviewing services, configuration, dependencies, interfaces, background jobs, deployment, or production readiness; or when asked to apply Twelve-Factor, software craftsmanship, Larry Wall's virtues, Perl design principles, Huffman coding, TMTOWTDI, DWIM, or convention over configuration.
 ---
 
 # 12 Factor Craftsmanship
 
 ## Scope the change
 
-1. Read the project's instructions, the code being changed, its callers, and relevant tests.
-2. Identify the required behavior, workload, runtime, and constraints. Apply only the guidance relevant to the task.
-3. Choose the smallest clear change that meets the need. Follow existing conventions and keep unrelated cleanup separate.
-4. Adapt a default when it conflicts with the actual requirements or platform. For a material adaptation, briefly explain the goal, trade-off, and verification in the existing review or decision record. Routine choices need no extra document or approval.
-5. Reconsider earlier choices when requirements change, failures recur, or maintenance costs rise. Preserve correctness, security, and explicit user requirements while changing the approach.
+1. Read project instructions, the affected code, its callers, and relevant tests. Include framework discovery and lifecycle hooks when tracing behavior.
+2. Identify the requested behavior and the constraints that affect it: compatibility, runtime, data durability, security, and deployment. Apply only checks relevant to the change.
+3. Preserve behavior outside the request. Keep unrelated cleanup separate; prefer changes that can be reviewed and reverted independently.
+4. Start with the defaults below. When a requirement or platform makes one unsuitable, choose an alternative that meets the underlying need. Explain material trade-offs and verification in the existing review or decision record; routine choices need no extra document or approval.
 
 ## Write maintainable code
 
-- Use names that describe intent and units with clear responsibilities. Split code when doing so makes behavior easier to understand or change; use line counts as investigation prompts.
-- Keep business rules separate from I/O and mutable state where that reduces coupling. Judge simplicity by how independently concerns can change, including the work shifted onto callers.
-- Make behavior discoverable at its point of use. Keep related behavior close and calls explicit; avoid distant wiring that requires searching the whole application. Keep implementation details behind clear interfaces.
-- Represent mutually exclusive states with variants or constrained constructors instead of independent flags. Validate external input before constructing domain values; use runtime checks where types cannot enforce the constraints.
-- Express important preconditions, postconditions, and invariants in types, validation, assertions, or tests. Distinguish invalid input from implementation defects; keep required boundary validation active in production.
-- Remove dead code. Share code that represents the same knowledge or responsibility. Keep similar-looking code separate when its callers need different behavior or change independently.
-- When a shared abstraction accumulates flags and unrelated branches, inspect its callers. Inline the relevant behavior into each caller, remove unused paths, and extract a smaller shared concept if one becomes clear.
-- Improve what the task touches in small, reversible steps. Surface risks and explain consequential trade-offs early.
-- **Use the right tool for the right job.** Start with project tools and standard capabilities. Use a parser for structured data, text search for literal strings, and transactions for related writes that must be atomic. Compare a dependency's maintenance cost with a small local implementation. Introduce or replace a tool for a concrete benefit that justifies its total cost.
+- Name units for their purpose. Split a unit when it mixes responsibilities or makes a required change hard to isolate, rather than to meet a line limit.
+- Keep business decisions separate from I/O and mutable state when this lets them be tested or changed independently. Add a layer only to isolate a dependency, policy, or independently changing responsibility.
+- Make behavior discoverable from the point of use through clear calls, declarations, and established framework conventions. Keep related behavior close; retain implementation details behind interfaces.
+- Model mutually exclusive states with variants or constrained construction when invalid combinations are possible. For example, represent pending, succeeded, and failed results as alternatives instead of independent flags. Use runtime validation when types cannot enforce the constraint.
+- Express important input requirements, output guarantees, and state invariants through types, validation, assertions, or tests. Validate untrusted data at entry points; assertions that can be disabled must not be the only protection there.
+- Share code when callers follow the same rule and should change together. Similar syntax alone is insufficient. If shared code gains flags or unrelated branches, inspect callers first; separate behavior only when they represent different responsibilities. Preserve behavior with focused checks before restructuring.
+- Before deleting apparently unused code, check direct callers, framework discovery, configuration references, and public compatibility obligations. Delete it when those checks confirm it is unused or the task explicitly retires it.
+- **Use the right tool for the right job / TMTOWTDI.** Reuse suitable project tools and standard capabilities. Use parsers for structured data and transactions for writes that must be atomic. Compare a new dependency with a small local implementation, accounting for correctness, integration, updates, and maintenance. Choose one approach that meets the actual requirements.
 
 ## Apply the programmer virtues
 
-- **Laziness — save everyone future work.** Reuse existing tools, automate repeated chores when the savings exceed maintenance costs, and document how to run them. Keep necessary error handling and checks.
-- **Impatience — remove wasted time.** Shorten feedback loops and remove redundant steps. Measure a slow path before optimizing and compare afterward. Preserve checks that catch failures; show progress for long-running user tasks.
-- **Hubris — take responsibility for the result.** Review your diff, verify behavior, report limits, and correct flaws exposed by evidence or review. Favor code others can inspect and maintain.
-- **Diligence, patience, and humility — investigate and revise.** Read unfamiliar code before changing it, investigate failed checks, and update mistaken assumptions. Stop investigating when further analysis would not change the decision or verification.
+- **Laziness:** Automate a repeated chore when the saved work exceeds setup and maintenance; document how to run the automation.
+- **Impatience:** When a task is slow, measure where time goes, remove redundant work, and compare afterward using the same workload. Preserve checks that detect failures; show progress for long-running user operations.
+- **Hubris:** Own the delivered result: inspect the diff, verify claims, and report limits using **Verify and report** below.
+- **Diligence, patience, and humility:** Investigate failed checks and conflicting evidence before changing the implementation. Revise a choice when new requirements or evidence invalidate its assumptions; retain the checks needed to establish the replacement's behavior.
 
 ## Design for people
 
-- Expose only the operations consumers need. Keep interfaces small and specific; add methods when a caller needs them.
-- **Huffman coding — give common operations a short, clear path.** Minimize setup and repeated arguments for frequent tasks; make unusual options explicit. For example, support `client.get(url)` with optional timeout settings. Keep names readable and side effects visible.
-- **Easy things easy, hard things possible.** Provide simple defaults and explicit options or composition for demonstrated advanced needs. For example, accept a filename for ordinary parsing and a stream for large inputs. Add extension points when a real requirement needs them.
-- **TMTOWTDI — choose the approach that fits.** Select one implementation based on requirements, project conventions, and maintenance cost. Reuse a suitable existing HTTP client instead of introducing a competing library for preference alone.
-- **DWIM — match informed expectations.** Use the audience's vocabulary and established conventions for names, defaults, and errors. Make `--dry-run` show planned changes without writing them. Surface ambiguous targets and invalid inputs before acting; keep coercions explicit.
-- **Waterbed theory — check where complexity moves.** Before extracting a helper or adding configuration, inspect the effect on callers, debugging, deployment, and maintenance. Delete unnecessary behavior first. Keep an abstraction when it reduces the total burden.
+- Expose operations that consumers need. Keep interfaces specific to those uses; avoid adding methods or extension points for hypothetical callers. Preserve existing public contracts unless changing them is part of the task.
+- **Huffman coding:** Minimize repeated setup for common operations while keeping names and side effects clear. Put unusual options behind explicit arguments; do not shorten names merely to save characters.
+- **Easy things easy, hard things possible:** Provide a simple default for ordinary use and options or composition for demonstrated advanced requirements. Keep those options out of the ordinary call path.
+- **DWIM:** Match established vocabulary and behavior. Make `--dry-run` avoid writes; reject invalid input with actionable errors. Resolve ambiguous destructive targets before acting and make coercions visible.
+- **Waterbed theory:** Before adding a helper, layer, or configuration option, check what callers and maintainers must now understand. Prefer the design that removes special cases and duplicated decisions across the affected paths.
 
 ## Check service operation
 
-For each area the change touches, apply the relevant checks below. For libraries, CLIs, embedded software, or managed runtimes, skip inapplicable mechanisms and verify the underlying need directly.
+Check only areas touched by the change. For libraries, CLIs, embedded systems, and managed runtimes, use the applicable platform mechanism instead of introducing service infrastructure.
 
-1. **Codebase:** Keep source-to-release provenance clear and builds reproducible. In a monorepo, give each deployable unit clear boundaries and ownership.
-2. **Dependencies:** Declare runtime and build dependencies, including required system tools. Use the ecosystem's appropriate version constraints and lockfiles; verify a clean environment can build and run the app.
-3. **Config:** Keep deploy-specific values outside the built artifact. Use env vars, mounted config, secret stores, or workload identity as appropriate. Keep credentials out of source and define configuration precedence. Version non-secret deployment config when useful.
-4. **Backing services:** Configure service endpoints and credentials externally. Check connection, timeout, and failure behavior when changing databases, queues, caches, or APIs. Remove accidental assumptions that services run locally.
-5. **Build, release, run:** Build a reproducible artifact, combine it with deployment config, and run that release. Keep dependency installation and source edits out of startup. Run migrations as controlled deployment operations rather than during image builds.
-6. **Processes:** Keep replaceable instances independent of ephemeral state. Store durable data in persistent resources. For intentionally stateful workloads, define ownership, recovery, and scaling behavior.
-7. **Port binding:** Have self-hosted services bind a configured port. For managed functions, implement and verify the platform handler contract.
-8. **Concurrency:** Separate web, worker, or scheduler roles when their scaling or lifecycle needs differ. Keep roles together when that meets the requirements more simply. Let the platform manage process supervision and concurrency where supported.
-   With supervision available, isolate failures and assign recovery to the supervisor. Bound restarts, make recovery safe, and surface exhausted recovery attempts. Handle expected errors explicitly; restart failed workers when their state is no longer trustworthy.
-9. **Disposability:** Follow the runtime lifecycle. For long-running processes, handle `SIGTERM`, stop accepting work, and finish or requeue in-flight jobs. For managed functions, handle deadlines and retries. Use idempotency or deduplication where work may repeat.
-10. **Dev/prod parity:** Match behavior where differences could hide defects, such as database semantics. Use lightweight substitutes for fast local feedback when integration checks exercise the real service.
-11. **Logs and telemetry:** Use structured stdout/stderr on platforms that collect process output, or their supported telemetry interfaces. Add metrics and traces needed to diagnose changed behavior. Keep sensitive data out of telemetry and delegate routing and rotation to the platform where supported.
-12. **Admin processes:** Version migrations and management tools. Run them against the intended release and environment with appropriate access; make failures and retries safe.
+1. **Codebase:** Ensure each deployable artifact can be traced to its source revision and build inputs. Keep deployable boundaries clear in monorepos.
+2. **Dependencies:** Declare runtime and build dependencies, including system tools. Use the ecosystem's version constraints and lockfiles. When changing dependency or build setup, verify it in a clean environment or existing CI job.
+3. **Config:** Keep deploy-specific values outside the built artifact. Use the platform's env vars, mounted config, secret store, or workload identity. Keep credentials out of source; define precedence when multiple configuration sources exist.
+4. **Backing services:** Configure endpoints and credentials externally. When changing an integration, check connection failures, timeouts, and error propagation. Check existing SDK and platform retries before adding any. Assign retry ownership; bound total attempts and elapsed time across layers. Retry only transient failures and operations safe to repeat.
+5. **Build, release, run:** Build the artifact before deployment and associate it with release configuration. Keep dependency installation and source edits out of startup. Run migrations as controlled release operations with a failure and recovery path. For rolling deployments, verify schema compatibility while old and new versions coexist; delay destructive changes until old consumers are gone.
+6. **Processes:** Store durable state outside replaceable instances. Treat local memory and ephemeral disk as disposable. For intentionally stateful workloads, define persistence, ownership, recovery, and scaling.
+7. **Port binding:** Bind a configured port for self-hosted services. For managed functions, verify the platform's handler and invocation contract.
+8. **Concurrency:** Separate roles when resource or lifecycle needs require independent scaling; otherwise retain the simpler deployment. Use existing platform supervision. Where supervised recovery is available, isolate failures, bound restarts, and surface exhausted recovery attempts. Before replaying effects with uncertain outcomes, reuse existing idempotency keys or reconcile durable outcomes. Surface unresolved work when safe replay cannot be established.
+9. **Disposability:** Follow the runtime lifecycle. For long-running processes, stop accepting work on shutdown and finish or requeue in-flight work within the termination deadline. For functions, handle deadlines and redelivery. Use idempotency or deduplication for effects that may repeat.
+10. **Dev/prod parity:** Test against the real service when behavior depends on its semantics. Keep fast local substitutes where useful; cover their relevant differences with integration checks.
+11. **Logs and telemetry:** Use the platform's collection interfaces, such as structured stdout/stderr. Capture enough context to diagnose changed behavior without secrets or sensitive payloads. Add metrics or traces for specific operational questions; delegate routing and rotation where supported.
+12. **Admin processes:** Version management tools and migrations. Verify the target release, environment, and access before running them; check partial-failure and rerun behavior.
+
+For changes to exposed interfaces or data access, verify input validation, authentication, and authorization, including rejected requests.
 
 ## Additional factor
 
-13. **Convention over configuration:** Use established framework and project conventions for naming, file placement, discovery, and wiring. Remove configuration that merely restates those conventions. Provide explicit overrides for demonstrated exceptions and make the effective behavior easy to inspect. Keep deploy-specific values such as credentials and service endpoints external, as in factor 3.
-
-When changing exposed interfaces or access to data, check input validation, authentication, authorization, and failure behavior. Match these checks to the actual exposure and requirements.
+13. **Convention over configuration:** Use established naming, placement, discovery, and wiring conventions. Before removing an explicit setting, verify that the effective default preserves behavior across supported environments and framework versions. Keep settings that intentionally pin behavior. Add overrides for actual exceptions, document their precedence, and keep deploy-specific values external as in factor 3.
 
 ## Verify and report
 
-- Run checks that exercise the changed behavior. For logic changes, add or update tests that catch the relevant failure. For documentation or configuration changes, validate the affected format, references, or behavior as appropriate.
-- Inspect the final diff for unintended changes, secrets, dead code, and needless complexity. Measure before and after when claiming a performance improvement.
-- Investigate failures and review feedback. Report what changed, what was verified, and any remaining failures, skipped checks, or limits. Support success claims with results you observed.
-- In code reviews, report `principle → location → concrete consequence → proportionate fix`. Rank security and data-loss risks first. Call out a departure from a default when it creates a concrete risk or cost; skip irrelevant rules and avoid findings based only on stylistic preference.
+- Run existing checks that exercise the changed behavior. Add or update a focused test when they do not catch the relevant failure. For documentation or configuration, validate the affected format, references, or behavior.
+- Inspect the final diff for unintended changes, exposed credentials, and unnecessary complexity.
+- Report what changed, which checks ran and their results, and remaining failures or limits. State when a required environment or check was unavailable. Claim success only for outcomes supported by observed results.
+- For reviews, report `location → concrete consequence → proportionate fix`, naming the relevant principle when useful. Rank security and data-loss risks first. Establish a concrete risk or cost before flagging a departure from a default.
