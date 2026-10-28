@@ -16,10 +16,14 @@ description: Use when designing a service, adding config, dependencies, logging,
 ## Write maintainable code
 
 - Use names that describe intent and units with clear responsibilities. Split code when doing so makes behavior easier to understand or change; use line counts as investigation prompts.
+- Keep business rules separate from I/O and mutable state where that reduces coupling. Judge simplicity by how independently concerns can change, including the work shifted onto callers.
+- Make behavior discoverable at its point of use. Keep related behavior close and calls explicit; avoid distant wiring that requires searching the whole application. Keep implementation details behind clear interfaces.
+- Represent mutually exclusive states with variants or constrained constructors instead of independent flags. Validate external input before constructing domain values; use runtime checks where types cannot enforce the constraints.
+- Express important preconditions, postconditions, and invariants in types, validation, assertions, or tests. Distinguish invalid input from implementation defects; keep required boundary validation active in production.
 - Remove dead code. Share code that represents the same knowledge or responsibility. Keep similar-looking code separate when its callers need different behavior or change independently.
 - When a shared abstraction accumulates flags and unrelated branches, inspect its callers. Inline the relevant behavior into each caller, remove unused paths, and extract a smaller shared concept if one becomes clear.
 - Improve what the task touches in small, reversible steps. Surface risks and explain consequential trade-offs early.
-- **Use the right tool for the right job.** Start with project tools and standard capabilities. Use a parser for structured data, text search for literal strings, and transactions for related writes that must be atomic. Introduce or replace a tool for a concrete benefit that justifies its dependency, migration, and maintenance costs.
+- **Use the right tool for the right job.** Start with project tools and standard capabilities. Use a parser for structured data, text search for literal strings, and transactions for related writes that must be atomic. Compare a dependency's maintenance cost with a small local implementation. Introduce or replace a tool for a concrete benefit that justifies its total cost.
 
 ## Apply the programmer virtues
 
@@ -30,6 +34,7 @@ description: Use when designing a service, adding config, dependencies, logging,
 
 ## Design for people
 
+- Expose only the operations consumers need. Keep interfaces small and specific; add methods when a caller needs them.
 - **Huffman coding — give common operations a short, clear path.** Minimize setup and repeated arguments for frequent tasks; make unusual options explicit. For example, support `client.get(url)` with optional timeout settings. Keep names readable and side effects visible.
 - **Easy things easy, hard things possible.** Provide simple defaults and explicit options or composition for demonstrated advanced needs. For example, accept a filename for ordinary parsing and a stream for large inputs. Add extension points when a real requirement needs them.
 - **TMTOWTDI — choose the approach that fits.** Select one implementation based on requirements, project conventions, and maintenance cost. Reuse a suitable existing HTTP client instead of introducing a competing library for preference alone.
@@ -48,6 +53,7 @@ For each area the change touches, apply the relevant checks below. For libraries
 6. **Processes:** Keep replaceable instances independent of ephemeral state. Store durable data in persistent resources. For intentionally stateful workloads, define ownership, recovery, and scaling behavior.
 7. **Port binding:** Have self-hosted services bind a configured port. For managed functions, implement and verify the platform handler contract.
 8. **Concurrency:** Separate web, worker, or scheduler roles when their scaling or lifecycle needs differ. Keep roles together when that meets the requirements more simply. Let the platform manage process supervision and concurrency where supported.
+   With supervision available, isolate failures and assign recovery to the supervisor. Bound restarts, make recovery safe, and surface exhausted recovery attempts. Handle expected errors explicitly; restart failed workers when their state is no longer trustworthy.
 9. **Disposability:** Follow the runtime lifecycle. For long-running processes, handle `SIGTERM`, stop accepting work, and finish or requeue in-flight jobs. For managed functions, handle deadlines and retries. Use idempotency or deduplication where work may repeat.
 10. **Dev/prod parity:** Match behavior where differences could hide defects, such as database semantics. Use lightweight substitutes for fast local feedback when integration checks exercise the real service.
 11. **Logs and telemetry:** Use structured stdout/stderr on platforms that collect process output, or their supported telemetry interfaces. Add metrics and traces needed to diagnose changed behavior. Keep sensitive data out of telemetry and delegate routing and rotation to the platform where supported.
