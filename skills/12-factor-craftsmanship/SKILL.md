@@ -11,7 +11,23 @@ Three lenses, applied together:
 - **Software Craftsmanship** (https://manifesto.softwarecraftsmanship.org) — how the software is *made*: well-crafted, steadily improved, professionally delivered.
 - **Perl philosophy** — how the programmer *works* and designs for people: [Larry Wall's three virtues](https://perldoc.perl.org/perlglossary#hubris) and the practical design principles below.
 
-Working code that violates the factors is not done. Code that satisfies the factors but is hard to read and change is not done either.
+Use these lenses to make software reliable, understandable, and economical to change. Treat their prescriptions as starting points whose value depends on the workload, platform, and team. Judge the result by evidence and consequences.
+
+## Apply judgment and revise it
+
+1. **Start with context.** Identify the actual need, workload, deployment platform, project conventions, and constraints. Apply only the guidance relevant to the change.
+2. **Name the goal behind the rule.** For example, external config enables the same artifact to run in different environments; small units help people understand and change behavior.
+3. **Choose a proportionate approach.** Use the default when it serves that goal. Adapt or set it aside when another approach better meets the need. Preserve correctness, security, and explicit user requirements.
+4. **Make the decision testable.** For a meaningful departure, briefly state the context, chosen approach, trade-off, and how the intended outcome will be verified. Use the existing review or decision record; routine choices need no extra document or approval.
+5. **Revisit when evidence changes.** New requirements, repeated exceptions, operational failures, or rising maintenance cost can invalidate an earlier choice. Change the implementation or guidance when that happens; previous effort alone is no reason to keep it.
+
+### Learn from how the guidance evolves
+
+The [Twelve-Factor update effort](https://github.com/twelve-factor/twelve-factor/blob/next/UPDATE_FAQ.md) separates underlying principles from examples and modernizes guidance for changing platforms. Later work such as [Beyond the Twelve-Factor App](https://www.oreilly.com/library/view/beyond-the-twelve-factor/9781492042631/) also broadens the discussion to API design, telemetry, and authentication and authorization. These are useful considerations when the application needs them; the original twelve are not a complete production-readiness specification. Distinguish published guidance, proposed revisions, and this skill's adaptations when citing them.
+
+[Sandi Metz's The Wrong Abstraction](https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction) shows how an abstraction can stop fitting as requirements change. When shared code accumulates flags and unrelated branches, consider inlining it and allowing duplication while the actual responsibilities become clear. Extract again when a useful shared concept emerges. Treat size limits and duplication checks as prompts to investigate, with maintainability as the goal.
+
+Apply this willingness to revise across all three lenses, including the Perl principles and this skill itself.
 
 ## The craftsmanship stance
 
@@ -19,7 +35,7 @@ The manifesto extends the Agile manifesto. Each line keeps the original value an
 
 | Not only…                    | …but also                          | What it means for you as an agent |
 |------------------------------|------------------------------------|-----------------------------------|
-| working software             | **well-crafted software**          | Passing tests is the floor. Clear names, small units, no dead code, no copy-paste. |
+| working software             | **well-crafted software**          | Use clear names and understandable units. Remove dead code and duplication that obscures shared knowledge; allow duplication when an abstraction would couple different responsibilities. |
 | responding to change         | **steadily adding value**          | Leave the code a bit better than you found it. Small, safe, reversible steps. |
 | individuals and interactions | **a community of professionals**   | Follow the project's conventions. Explain trade-offs. Make the next reader's job easy. |
 | customer collaboration       | **productive partnerships**        | Push back on bad ideas with reasons. Surface risks early. Don't silently cut corners. |
@@ -122,48 +138,48 @@ These are practical adaptations of Perl's design principles, not requirements to
 
 ## The twelve factors
 
-Check each factor that the change touches. Each entry: the rule, then what to look for.
+Check each factor that the change touches. These summarize the original defaults for services; apply the judgment process above to their concrete implementation. Each entry gives the default, then what to look for.
 
 1. **Codebase** — One codebase in version control, many deploys.
-   Flag: one app split across repos without a shared library, or several apps sharing one deployable unit.
+   Keep source-to-release provenance clear. A monorepo may contain several apps; assess whether each deployable unit has clear ownership and reproducible builds rather than counting repositories.
 2. **Dependencies** — Declare and isolate every dependency explicitly.
    Use a manifest plus lockfile (`package.json`/lock, `pyproject.toml`/`uv.lock`, `go.mod`, …). Flag: relying on globally installed tools or system packages that aren't declared.
 3. **Config** — Store config in the environment.
-   Anything that varies between deploys (URLs, credentials, feature toggles) comes from env vars. Flag: hard-coded secrets, per-environment config files committed to the repo, `if env == "prod"` branches.
+   Keep deploy-specific values separate from the built artifact. Env vars are the original mechanism; mounted configuration, secret stores, and workload identity can serve the goal too. Flag: embedded credentials, rebuilding to change deploy settings, or unclear configuration precedence. Versioned non-secret deployment configuration can be appropriate.
 4. **Backing services** — Treat databases, queues, caches, mail, and APIs as attached resources.
    Swapping a local Postgres for a managed one should be a config change only. Flag: hard-coded hosts, code that assumes a service is local.
 5. **Build, release, run** — Strictly separate the three stages.
    Build produces an artifact; release = artifact + config; run executes a release. Flag: code changes or `pip install` at runtime, migrations baked into image builds.
 6. **Processes** — Run as one or more stateless, share-nothing processes.
-   Persist state in a backing service. Flag: in-memory sessions, local-disk uploads, sticky-session assumptions.
+   For replaceable service instances, persist durable state in a backing service. For intentionally stateful workloads, make ownership, persistence, recovery, and scaling explicit. Flag: accidental reliance on instance memory or ephemeral disk for durable data.
 7. **Port binding** — Export services by binding to a port.
-   The app is self-contained and serves HTTP (or another protocol) itself. Port comes from config (`PORT`).
+   A self-hosted service binds its configured port. A managed function may use a platform handler instead; verify its invocation contract rather than adding an unnecessary HTTP server.
 8. **Concurrency** — Scale out via the process model.
-   Separate process types (web, worker, scheduler) scale independently. Flag: one process doing everything, self-daemonizing, PID files.
+   Separate workloads when they need different scaling or lifecycles. Small applications can keep roles together when that is operationally simpler. Managed platforms may own concurrency. Flag: roles that cannot meet their resource or reliability needs, self-daemonizing, PID files.
 9. **Disposability** — Fast startup and graceful shutdown.
-   Handle `SIGTERM`: stop accepting work, finish or requeue in-flight jobs, exit. Jobs should be idempotent so a crash is safe.
+   Follow the runtime's lifecycle contract. For long-running processes, handle `SIGTERM`: stop accepting work, finish or requeue in-flight jobs, exit. For managed functions, account for deadlines and retries. Use idempotency or deduplication where work may repeat.
 10. **Dev/prod parity** — Keep development, staging, and production as similar as possible.
-    Same backing service types and versions (e.g. Postgres locally, not SQLite). Small, frequent deploys. Flag: "works on my machine" adapters.
+    Match production behavior where differences could hide defects (e.g. database semantics). Lightweight local substitutes can be useful when integration checks cover the real service. Balance fidelity against feedback speed and cost. Flag: untested differences that cause deployment failures.
 11. **Logs** — Treat logs as event streams.
-    Write to stdout/stderr, one event per line, structured where possible. Flag: the app opening, rotating, or shipping its own log files.
+    On platforms that collect process output, write structured events to stdout/stderr and let the platform route them. Use supported telemetry interfaces where appropriate. Add metrics and traces when needed to diagnose behavior; keep sensitive data out of telemetry. Flag: missing operational visibility or unnecessary application-owned log rotation.
 12. **Admin processes** — Run admin/management tasks as one-off processes.
     Migrations and scripts ship with the code, run against the same release and config. Flag: ad-hoc SQL on prod, scripts that live outside the repo.
 
 ## How to apply
 
-**When writing code:** follow the factors by default. If the project already breaks one, don't widen the break; mention it.
+**When writing code:** start with the relevant defaults and preserve the goals behind them. Assess an existing departure before copying or replacing it. Explain material risks and adapt within the scope of the task.
 
-**When reviewing:** report findings as `factor or principle → location → issue → fix`. Rank by risk: secrets in code and data-loss risks first, style last. Skip factors the change doesn't touch.
+**When reviewing:** report findings as `factor or principle → location → concrete consequence → proportionate fix`. Establish that a departure causes a real risk or cost before calling it a defect. Rank by risk: secrets in code and data-loss risks first, style last. Skip factors the change doesn't touch.
 
-**When a factor doesn't fit** (a CLI tool, a library, an embedded device): say which factor you're setting aside and why. The factors target networked services; craftsmanship applies to everything.
+**When a factor doesn't fit** (a CLI tool, a library, an embedded device, a managed function, or an intentionally stateful service): briefly explain the relevant adaptation and how its goal is met. Craftsmanship applies across these contexts.
 
 ## Quick checklist
 
-- [ ] No secrets or per-environment values in code; all config from env
+- [ ] Deploy-specific configuration is separate from the artifact; credentials use an appropriate external mechanism
 - [ ] Dependencies declared and locked
-- [ ] Stateless processes; state in backing services
-- [ ] Logs to stdout; no log files managed by the app
-- [ ] Graceful `SIGTERM` handling; idempotent jobs
+- [ ] Durable state has explicit ownership and recovery; replaceable instances do not depend on ephemeral state
+- [ ] Logs and other needed telemetry use the platform's supported collection mechanisms
+- [ ] Shutdown and retry behavior fit the runtime; repeatable jobs handle retries safely
 - [ ] Admin tasks as versioned one-off commands
 - [ ] Tests cover the changed logic and pass
 - [ ] Code is clear enough that the next person can change it safely
@@ -174,3 +190,4 @@ Check each factor that the change touches. Each entry: the rule, then what to lo
 - [ ] Names and defaults match user expectations; ambiguous intent is surfaced
 - [ ] The chosen approach fits the project and reduces total complexity
 - [ ] Tools fit the task's requirements; new dependencies or replacements have a concrete benefit
+- [ ] Material adaptations have a reason and verification; changed assumptions trigger reconsideration

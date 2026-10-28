@@ -1,10 +1,14 @@
 # 12 Factor Craftsmanship
 
-An agent skill that helps AI coding agents build and review software using three complementary perspectives:
+An agent skill that helps AI coding agents build and review software using three complementary perspectives, adapted to the task, platform, and team:
 
 - [The Twelve-Factor App](https://12factor.net/): how the software runs.
 - [The Manifesto for Software Craftsmanship](https://manifesto.softwarecraftsmanship.org/): how the software is made.
 - **Perl philosophy:** [Larry Wall's three virtues](https://perldoc.perl.org/perlglossary#hubris), [Huffman coding for common operations](https://www.perl.com/pub/2001/10/02/apocalypse3.html/), and related design principles. Make common tasks easy, choose approaches that fit, keep behavior predictable, and balance laziness, impatience, and hubris with diligence, patience, and humility.
+
+These are starting points for judgment. The skill identifies the goal behind a rule, checks whether its usual implementation fits, and verifies the outcome. It explains meaningful trade-offs and revisits decisions when requirements, platforms, or evidence change. Use the right tool for the right job, including when that means changing an earlier choice.
+
+That approach reflects the [ongoing evolution of Twelve-Factor](https://github.com/twelve-factor/twelve-factor/blob/next/UPDATE_FAQ.md), which separates enduring principles from changing implementation guidance, and [Sandi Metz's The Wrong Abstraction](https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction), which explains why a once-useful abstraction may need to be undone. For example, mounted configuration can preserve separation from code, a managed function need not bind its own port, and temporary duplication can be better than coupling unrelated behavior. Security, observability, and other production needs must also be considered where relevant.
 
 The skill is one file, [`skills/12-factor-craftsmanship/SKILL.md`](skills/12-factor-craftsmanship/SKILL.md). It uses the open [Agent Skills](https://agentskills.io) format, so any agent that reads `SKILL.md` files can load it.
 
@@ -39,10 +43,10 @@ Copy `skills/12-factor-craftsmanship/` into your agent's skills directory. If yo
 
 ## Use
 
-The agent loads the skill when a task fits: designing a service, adding config, logging, or background jobs, setting up deployment, or reviewing code for production readiness. You can also ask for it by name:
+The agent loads the skill when a task fits: designing a service, adding config, logging, or background jobs, setting up deployment, or reviewing code for production readiness. Reviews focus on concrete risks and maintenance costs; a justified departure from a default is not automatically a defect. You can also ask for it by name:
 
 > Review this service with the 12-factor-craftsmanship skill.
 
 ## License
 
-MIT. The Twelve-Factor App, the Software Craftsmanship manifesto, and the cited Perl writings belong to their authors. This skill summarizes and adapts their ideas in its own words and links to the originals.
+MIT. The Twelve-Factor App, the Software Craftsmanship manifesto, and the other cited writings belong to their authors. This skill summarizes and adapts their ideas in its own words and links to the originals.
