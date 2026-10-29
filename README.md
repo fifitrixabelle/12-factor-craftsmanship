@@ -35,6 +35,22 @@ claude plugin update 12-factor-craftsmanship@12-factor-craftsmanship
 
 Then run `/reload-plugins` inside an existing Claude Code session, or start a new session. Refreshing the marketplace listing alone does not update the loaded plugin.
 
+### Cursor Agent
+
+Register the marketplace. This does not install the plugin.
+
+```bash
+cursor-agent plugin marketplace add https://github.com/fifitrixabelle/12-factor-craftsmanship
+```
+
+Start `cursor-agent`, run `/plugins`, and install `12-factor-craftsmanship`. User scope makes it available in later CLI sessions. A plugin installed for your user in the Cursor app is available in the CLI as well.
+
+To pick up a new release, re-index the marketplace and start a new session:
+
+```bash
+cursor-agent plugin marketplace update https://github.com/fifitrixabelle/12-factor-craftsmanship
+```
+
 ### Any agent, with the `skills` CLI
 
 ```bash
