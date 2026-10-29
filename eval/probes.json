@@ -1,0 +1,189 @@
+[
+  {
+    "id": "retry_idempotency",
+    "title": "Safe Retry & Idempotency Key Preservation",
+    "domain": "Backing Services & Resilience",
+    "factor": "Factor 4: Backing services",
+    "prompt": "Write a TypeScript/Node.js payment charge function that calls an external payment gateway API. Add retry logic to handle transient network errors and 503 Service Unavailable responses.",
+    "rubric": {
+      "pass_criteria": [
+        "Reuses the same idempotency key across all retry attempts for the same logical charge",
+        "Retries only transient failures (e.g. 5xx, timeouts, 429), not client errors (400, 401, 404)",
+        "Enforces a bounded retry limit (e.g. max 3-5 attempts)",
+        "Applies backoff delay (exponential or with jitter) between retries"
+      ],
+      "fail_criteria": [
+        "Generates a new idempotency key inside the retry loop (risking duplicate charges)",
+        "Unbounded retry loop without max attempt count",
+        "Retries non-transient 4xx errors without distinction"
+      ]
+    }
+  },
+  {
+    "id": "state_variants",
+    "title": "Make Illegal States Unrepresentable",
+    "domain": "Domain Modeling & Types",
+    "factor": "Write maintainable code: Model mutually exclusive states with variants",
+    "prompt": "Design a TypeScript type definition and status update handler for an asynchronous data export job that can be queued, processing (with integer progress percentage 0-100), completed (with download URL), or failed (with error message).",
+    "rubric": {
+      "pass_criteria": [
+        "Uses a discriminated/tagged union or variant types for the distinct states",
+        "Keeps state-specific fields constrained to their valid state (progress only on processing, downloadUrl only on completed, error only on failed)"
+      ],
+      "fail_criteria": [
+        "Uses independent boolean flags (e.g. isQueued, isProcessing, isCompleted, isFailed) allowing conflicting states simultaneously",
+        "Flat object where downloadUrl and error coexist without discrimination"
+      ]
+    }
+  },
+  {
+    "id": "wrong_abstraction",
+    "title": "Resisting Premature DRY / The Wrong Abstraction",
+    "domain": "Maintainability & Refactoring",
+    "factor": "Write maintainable code: Share code when callers follow the same rule and should change together",
+    "prompt": "In our e-commerce codebase, two validation rules currently check the exact same fields:\n1. Billing address validation: requires postal code and country.\n2. Shipping address validation: requires postal code and country.\n\nA junior engineer submitted a PR merging them into a single generic `validateAddress(addr)` function. Review this change and recommend whether to merge them or keep them separate, explaining why.",
+    "rubric": {
+      "pass_criteria": [
+        "Cautions against merging based on similar syntax alone",
+        "Explains that billing and shipping rules have different domain responsibilities and change independently (e.g. tax vs customs rules)",
+        "Warns against introducing flags or conditional branches into premature shared helpers (Sandi Metz's The Wrong Abstraction)"
+      ],
+      "fail_criteria": [
+        "Unconditionally advises merging purely to eliminate duplicate lines (dogmatic DRY)",
+        "Fails to consider independent lifecycles or caller responsibilities"
+      ]
+    }
+  },
+  {
+    "id": "disposability_shutdown",
+    "title": "Graceful Shutdown & Disposability",
+    "domain": "Process Lifecycle",
+    "factor": "Factor 9: Disposability & Factor 6: Processes",
+    "prompt": "Write a Node.js background worker script that polls a message queue and processes incoming jobs. Ensure it is production-ready for deployment in containerized environments (Kubernetes / ECS).",
+    "rubric": {
+      "pass_criteria": [
+        "Listens for process termination signals (SIGTERM and/or SIGINT)",
+        "Stops accepting/polling new jobs upon signal receipt",
+        "Drains or waits for active in-flight jobs to complete within a timeout deadline before exiting"
+      ],
+      "fail_criteria": [
+        "Infinite polling loop with no signal traps (abrupt termination drops in-flight jobs)",
+        "Immediate process.exit(0) on signal without waiting for in-flight work"
+      ]
+    }
+  },
+  {
+    "id": "config_telemetry_safety",
+    "title": "Config Externalization & Zero-Leak Telemetry",
+    "domain": "Configuration & Observability",
+    "factor": "Factor 3: Config & Factor 11: Logs and telemetry",
+    "prompt": "Write an HTTP configuration loader and request logging middleware in Node.js/TypeScript. The service connects to a database and an external API with authentication tokens.",
+    "rubric": {
+      "pass_criteria": [
+        "Loads configuration and secrets from environment variables (process.env)",
+        "Does NOT hardcode fallback credentials/passwords into source code",
+        "Redacts, sanitizes, or omits sensitive request headers (e.g. Authorization, Cookie, API keys) from logs",
+        "Writes structured logs to standard streams (stdout/stderr)"
+      ],
+      "fail_criteria": [
+        "Hardcodes fallback secret strings in code (e.g. process.env.API_KEY || 'default-secret')",
+        "Logs entire incoming request headers or auth tokens directly to output",
+        "Writes logs to a local file path instead of stdout/stderr"
+      ]
+    }
+  },
+  {
+    "id": "dwim_dry_run",
+    "title": "DWIM & Safe Non-Destructive Dry Run",
+    "domain": "Human-Centered Design",
+    "factor": "Design for people: DWIM (--dry-run avoids writes, actionable errors)",
+    "prompt": "Write a CLI tool script in Python to prune expired cache directories older than a given number of days. It must support a `--dry-run` flag and provide clear operator feedback.",
+    "rubric": {
+      "pass_criteria": [
+        "When --dry-run is specified, performs NO filesystem deletion or destructive writes",
+        "Clearly reports which files/directories would be pruned under dry-run mode",
+        "Rejects invalid arguments (e.g. negative days) with actionable error messages",
+        "Executes actual deletions only when --dry-run is not active"
+      ],
+      "fail_criteria": [
+        "Deletes files even when --dry-run is set",
+        "Silent execution with no feedback on what would be or was deleted",
+        "Crashes without actionable guidance on bad input"
+      ]
+    }
+  },
+  {
+    "id": "pure_core_imperative_shell",
+    "title": "Separating Business Decisions from I/O",
+    "domain": "Maintainability & Architecture",
+    "factor": "Write maintainable code: Keep business decisions separate from I/O and mutable state",
+    "prompt": "We need an order total calculation module that applies tier discounts, promotion coupons, and sales tax. Show how to structure this cleanly in TypeScript/JavaScript for maximum maintainability and testability.",
+    "rubric": {
+      "pass_criteria": [
+        "Implements calculation and discount logic as a pure function / separate domain unit",
+        "Calculation logic accepts explicit inputs (order, rates, discounts) and performs no direct database or network I/O",
+        "Allows testing business rules without mocking network or database clients"
+      ],
+      "fail_criteria": [
+        "Embeds SQL queries or fetch/axios calls directly inside the calculation loop",
+        "Entangles mutable global database state with discount calculation rules"
+      ]
+    }
+  },
+  {
+    "id": "rolling_migration",
+    "title": "Safe Schema Migrations in Rolling Releases",
+    "domain": "Release Engineering",
+    "factor": "Factor 5: Build, release, run (rolling deployments & schema compatibility)",
+    "prompt": "In a PostgreSQL database serving a microservice deployed via zero-downtime rolling deployments, we need to rename the column `customer_name` to `full_name`. Explain the migration strategy and deployment steps.",
+    "rubric": {
+      "pass_criteria": [
+        "Explicitly accounts for old and new application versions coexisting simultaneously during rolling rollout",
+        "Recommends an expand-and-contract / phased migration (add new column, dual-write/read fallback, backfill, switch reader, drop old column)",
+        "Defers destructive change (dropping old column) until old consumers are decommissioned"
+      ],
+      "fail_criteria": [
+        "Suggests a single instantaneous ALTER TABLE RENAME COLUMN without backward compatibility (breaking in-flight requests on the old version)",
+        "Ignores coexistence of old and new application instances"
+      ]
+    }
+  },
+  {
+    "id": "serverless_adaptation_review",
+    "title": "Review Judgment: Sound Adaptation vs Defect",
+    "domain": "Review & Verification",
+    "factor": "Review judgment: sound adaptation vs dogmatic finding; location -> consequence -> proportionate fix",
+    "prompt": "Review the following code for an AWS Lambda service:\n\n```typescript\nimport { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';\n\nexport const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {\n  const body = JSON.parse(event.body || '{}');\n  const result = await processOrder(body);\n  return {\n    statusCode: 200,\n    body: JSON.stringify(result),\n  };\n};\n```\n\nA reviewer claimed: 'Defect: Violates 12-Factor Factor 7 (Port Binding) because it does not bind an HTTP port with app.listen(). Must convert to Express.'\n\nProvide your review verdict on this claim and the code.",
+    "rubric": {
+      "pass_criteria": [
+        "Rejects the reviewer's defect claim: recognizes that managed functions follow the platform invocation contract rather than self-hosted port binding (sound adaptation)",
+        "Focuses findings on concrete risks (e.g. unhandled JSON.parse syntax error, missing status handling)",
+        "Follows location -> concrete consequence -> proportionate fix structure",
+        "Distinguishes demonstrated defects from optional improvements or non-issues"
+      ],
+      "fail_criteria": [
+        "Agrees with the dogmatic claim that AWS Lambda violates 12-factor by not binding a port",
+        "Demands adding Express or local HTTP server inside Lambda handler",
+        "Lacks concrete consequence and proportionate fix structure"
+      ]
+    }
+  },
+  {
+    "id": "convention_over_configuration",
+    "title": "Factor 13: Convention Over Configuration",
+    "domain": "Architecture & Simplicity",
+    "factor": "Additional factor 13: Convention over configuration",
+    "prompt": "We are adding a new REST endpoint for `GET /api/v1/projects/:id` in a modern convention-based framework (like Next.js App Router, NestJS, or Rails). A developer proposed creating a custom dynamic reflection router and a centralized route XML/JSON registry to manually wire up handlers. What is your assessment and recommended approach?",
+    "rubric": {
+      "pass_criteria": [
+        "Recommends adhering to the framework's standard file/directory naming conventions (e.g. file-based routing or standard controller conventions)",
+        "Points out that custom registration layers introduce unnecessary cognitive overhead and duplicate framework discovery (Waterbed theory)",
+        "Explains that explicit overrides should be reserved for genuine exceptions"
+      ],
+      "fail_criteria": [
+        "Endorses building the bespoke reflection/registry configuration layer without justification",
+        "Ignores established framework discovery conventions"
+      ]
+    }
+  }
+]

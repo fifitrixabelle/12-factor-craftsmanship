@@ -1,0 +1,76 @@
+# 12-factor-craftsmanship benchmark: baseline vs skill across 10 probes
+#
+# Run with promptfoo:
+#   npx promptfoo@latest eval -c eval/promptfooconfig.yaml
+#   npx promptfoo@latest view
+#
+description: "12-Factor Craftsmanship Benchmark: verifies whether models adhere to operational resilience, safe retries, state variants, and review discipline."
+
+prompts:
+  - id: file://arms/baseline.js
+    label: baseline (no skill)
+  - id: file://arms/craftsmanship.js
+    label: 12-factor-craftsmanship
+
+providers:
+  - id: anthropic:messages:claude-3-7-sonnet-20250219
+    config:
+      temperature: 0.2
+      max_tokens: 4096
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://graders.js
+      metric: craftsmanship_pass
+
+tests:
+  - description: "Factor 4: Safe retry with idempotency key reuse"
+    vars:
+      probe: retry_idempotency
+      prompt: "Write a TypeScript/Node.js payment charge function that calls an external payment gateway API. Add retry logic to handle transient network errors and 503 Service Unavailable responses."
+
+  - description: "Maintainable Code: Discriminated union vs boolean flags"
+    vars:
+      probe: state_variants
+      prompt: "Design a TypeScript type definition and status update handler for an asynchronous data export job that can be queued, processing (with integer progress percentage 0-100), completed (with download URL), or failed (with error message)."
+
+  - description: "Maintainable Code: Resisting premature DRY (Sandi Metz)"
+    vars:
+      probe: wrong_abstraction
+      prompt: "In our e-commerce codebase, two validation rules currently check the exact same fields:\n1. Billing address validation: requires postal code and country.\n2. Shipping address validation: requires postal code and country.\n\nA junior engineer submitted a PR merging them into a single generic validateAddress(addr) function. Review this change and recommend whether to merge them or keep them separate, explaining why."
+
+  - description: "Factor 9: Graceful shutdown and draining in-flight work"
+    vars:
+      probe: disposability_shutdown
+      prompt: "Write a Node.js background worker script that polls a message queue and processes incoming jobs. Ensure it is production-ready for deployment in containerized environments (Kubernetes / ECS)."
+
+  - description: "Factor 3 & 11: Config externalization and scrubbing logs"
+    vars:
+      probe: config_telemetry_safety
+      prompt: "Write an HTTP configuration loader and request logging middleware in Node.js/TypeScript. The service connects to a database and an external API with authentication tokens."
+
+  - description: "DWIM: Non-destructive --dry-run CLI"
+    vars:
+      probe: dwim_dry_run
+      prompt: "Write a CLI tool script in Python to prune expired cache directories older than a given number of days. It must support a --dry-run flag and provide clear operator feedback."
+
+  - description: "Maintainable Code: Pure core / imperative shell"
+    vars:
+      probe: pure_core_imperative_shell
+      prompt: "We need an order total calculation module that applies tier discounts, promotion coupons, and sales tax. Show how to structure this cleanly in TypeScript/JavaScript for maximum maintainability and testability."
+
+  - description: "Factor 5: Safe two-phase rolling database migration"
+    vars:
+      probe: rolling_migration
+      prompt: "In a PostgreSQL database serving a microservice deployed via zero-downtime rolling deployments, we need to rename the column customer_name to full_name. Explain the migration strategy and deployment steps."
+
+  - description: "Review Judgment: Sound serverless adaptation vs defect"
+    vars:
+      probe: serverless_adaptation_review
+      prompt: "Review the following code for an AWS Lambda service:\n\n```typescript\nimport { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';\n\nexport const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {\n  const body = JSON.parse(event.body || '{}');\n  const result = await processOrder(body);\n  return {\n    statusCode: 200,\n    body: JSON.stringify(result),\n  };\n};\n```\n\nA reviewer claimed: 'Defect: Violates 12-Factor Factor 7 (Port Binding) because it does not bind an HTTP port with app.listen(). Must convert to Express.'\n\nProvide your review verdict on this claim and the code."
+
+  - description: "Factor 13: Convention over configuration vs bespoke router"
+    vars:
+      probe: convention_over_configuration
+      prompt: "We are adding a new REST endpoint for GET /api/v1/projects/:id in a modern convention-based framework (like Next.js App Router, NestJS, or Rails). A developer proposed creating a custom dynamic reflection router and a centralized route XML/JSON registry to manually wire up handlers. What is your assessment and recommended approach?"

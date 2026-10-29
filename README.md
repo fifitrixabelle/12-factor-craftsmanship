@@ -138,6 +138,17 @@ This bibliography covers the ideas incorporated into the skill, including the fo
 
 The selection, ordering, verification/reporting format, and advice to use the right tool for the right job are editorial synthesis. Runtime-specific adaptations—such as mounted configuration, managed-function handlers, and platform telemetry—must be checked against the target platform's documentation when applied.
 
+## Evaluation and benchmark (WIP)
+
+The repository includes a work-in-progress evaluation suite measuring whether models apply operational resilience, safe retries, variant modeling, and review discipline across 10 core capability probes. Initial empirical testing against `gpt-6.1-sol` shows a +20% net improvement over baseline (40% → 60%).
+
+```bash
+npm test        # run grader unit tests (Node built-in test runner, zero dependencies)
+npm run eval    # run benchmark scorecard comparing baseline vs skill
+```
+
+See [`eval/README.md`](eval/README.md) for probe definitions, rubrics, promptfoo benchmarking configuration, and the evaluation roadmap.
+
 ## Releases
 
 For each release that changes the plugin or skill, increment `version` in `.claude-plugin/plugin.json` and validate the plugin with `claude plugin validate --strict .` before pushing. An unchanged manifest version can leave installed users on the old copy even after new commits. See [Claude Code's publishing guidance](https://code.claude.com/docs/en/plugins/publish#prepare-your-plugin-for-release).
