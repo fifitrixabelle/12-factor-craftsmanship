@@ -1,0 +1,675 @@
+{
+  "schemaVersion": 2,
+  "timestamp": "2026-10-30T19:10:44.432Z",
+  "requestedModel": "gpt-6.1-sol",
+  "cliVersion": "codex-cli 0.166.0",
+  "nodeVersion": "v24.22.2",
+  "sourceRevision": "2e745868911945f68d012d27ff22cfae04c0e18b",
+  "sourceDirty": true,
+  "skillSha256": "5415884beaef90a664b5fe8c1da4b0541cc75dfa943a9dbe3286e1e9296705fe",
+  "probesSha256": "f21b8a6d140459a3880822f638923a97d78bb9b5b7f9de3f4498fd5eaeb2d60b",
+  "gradersSha256": "3ee9d4e737be4074ef9b1cc6d6f2fada54fa7a5bf344968355faba0b03a1d7d6",
+  "runnerSha256": "653ee961c4c06b51d6eb7ce257f90764822b6935a8aa5055e66d4ecc7cbb4fdf",
+  "settings": {
+    "reasoningEffort": "low",
+    "timeoutMs": 120000,
+    "sandbox": "read-only",
+    "ignoreUserConfig": true,
+    "ephemeral": true
+  },
+  "limitations": [
+    "Single sample per probe; heuristic grades require manual or executable validation.",
+    "Temporary working directories and ignored user config reduce ambient instructions; global skills and provider defaults may still affect both arms.",
+    "requestedModel records the selected CLI argument, not independently verified server routing.",
+    "Usage covers the reported completed turn, not a guaranteed billing total."
+  ],
+  "probes": [
+    {
+      "id": "retry_idempotency",
+      "prompt": "Write a TypeScript/Node.js payment charge function that calls an external payment gateway API. Add retry logic to handle transient network errors and 503 Service Unavailable responses.",
+      "promptSha256": "439e69f1f01aa773b2114a543c57e803cd474a6cde1ea3b92ad4d23fe05e5f06",
+      "baseline": {
+        "status": "completed",
+        "output": "Use a **persisted idempotency key per logical payment**, reused across retries and subsequent calls. This requires a gateway that guarantees idempotent charges for the same key and payload.\n\nThe following uses Node.js built-in `fetch`; adapt the endpoint and response fields to your gateway.\n\n```ts\nimport { setTimeout as sleep } from \"node:timers/promises\";\n\ninterface ChargeInput {\n  amountMinor: number; // e.g. 1099 = $10.99\n  currency: string;\n  paymentMethodToken: string;\n  idempotencyKey: string; // Persist with the payment before calling.\n}\n\ninterface ChargeResult {\n  id: string;\n  status: string;\n}\n\nclass UnknownChargeOutcomeError extends Error {\n  constructor(cause: unknown) {\n    super(\n      \"Charge outcome is unknown. Reconcile with the gateway or retry \" +\n        \"with the same idempotency key and payload.\",\n      { cause },\n    );\n    this.name = \"UnknownChargeOutcomeError\";\n  }\n}\n\nconst transientCodes = new Set([\n  \"ECONNRESET\",\n  \"ECONNREFUSED\",\n  \"ETIMEDOUT\",\n  \"EAI_AGAIN\",\n  \"EPIPE\",\n  \"UND_ERR_CONNECT_TIMEOUT\",\n  \"UND_ERR_HEADERS_TIMEOUT\",\n  \"UND_ERR_BODY_TIMEOUT\",\n  \"UND_ERR_SOCKET\",\n]);\n\nfunction isTransientNetworkError(error: unknown): boolean {\n  if (!(error instanceof Error)) return false;\n  if (error.name === \"TimeoutError\") return true;\n\n  const code = (error as Error & { code?: string }).code;\n  return (\n    (code !== undefined && transientCodes.has(code)) ||\n    (error.cause !== undefined && isTransientNetworkError(error.cause))\n  );\n}\n\nexport async function chargePayment(\n  input: ChargeInput,\n  config: { chargesUrl: string; apiKey: string },\n): Promise<ChargeResult> {\n  if (\n    !Number.isSafeInteger(input.amountMinor) ||\n    input.amountMinor <= 0 ||\n    !/^[A-Z]{3}$/.test(input.currency) ||\n    !input.paymentMethodToken ||\n    !input.idempotencyKey.trim()\n  ) {\n    throw new Error(\"Invalid charge input\");\n  }\n\n  // Serialize once so every attempt sends the identical payload.\n  const body = JSON.stringify({\n    amount: input.amountMinor,\n    currency: input.currency,\n    payment_method: input.paymentMethodToken,\n  });\n\n  const maxAttempts = 3;\n\n  for (let attempt = 0; attempt < maxAttempts; attempt++) {\n    try {\n      const response = await fetch(config.chargesUrl, {\n        method: \"POST\",\n        redirect: \"error\",\n        headers: {\n          Authorization: `Bearer ${config.apiKey}`,\n          \"Content-Type\": \"application/json\",\n          \"Idempotency-Key\": input.idempotencyKey,\n        },\n        body,\n        signal: AbortSignal.timeout(5_000),\n      });\n\n      if (response.status === 503) {\n        await response.body?.cancel();\n        throw Object.assign(new Error(\"Gateway unavailable\"), {\n          code: \"GATEWAY_503\",\n        });\n      }\n\n      // Other HTTP errors are not retried automatically.\n      if (!response.ok) {\n        await response.body?.cancel();\n        throw new Error(`Gateway returned HTTP ${response.status}`);\n      }\n\n      // A lost or invalid success response can leave the outcome unknown.\n      const result: unknown = await response.json();\n      if (\n        typeof result !== \"object\" ||\n        result === null ||\n        !(\"id\" in result) ||\n        typeof result.id !== \"string\" ||\n        !(\"status\" in result) ||\n        typeof result.status !== \"string\"\n      ) {\n        throw new UnknownChargeOutcomeError(\"Invalid gateway response\");\n      }\n\n      return { id: result.id, status: result.status };\n    } catch (error) {\n      const retryable =\n        isTransientNetworkError(error) ||\n        (error instanceof Error &&\n          \"code\" in error &&\n          error.code === \"GATEWAY_503\");\n\n      if (!retryable) throw error;\n      if (attempt === maxAttempts - 1) {\n        throw new UnknownChargeOutcomeError(error);\n      }\n\n      // Bounded exponential backoff with jitter.\n      await sleep(Math.random() * Math.min(2_000, 250 * 2 ** attempt));\n    }\n  }\n\n  throw new Error(\"Unreachable\");\n}\n```\n\nDo not generate a new key after a timeout: the gateway may already have charged the customer. If the gateway lacks idempotency support, reconcile the payment before retrying.\n\nThis is an illustrative implementation; it has not been tested against a specific gateway.",
+        "durationMs": 23079,
+        "usage": {
+          "input_tokens": 31817,
+          "cached_input_tokens": 27008,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1175,
+          "reasoning_output_tokens": 73
+        },
+        "sentPromptSha256": "439e69f1f01aa773b2114a543c57e803cd474a6cde1ea3b92ad4d23fe05e5f06",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "stable idempotency key",
+              "pass": true
+            },
+            {
+              "criterion": "bounded attempts",
+              "pass": true
+            },
+            {
+              "criterion": "backoff delay",
+              "pass": true
+            },
+            {
+              "criterion": "transient failure classification",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Use a **persisted idempotency key for each logical payment**, reused across retries and job redelivery. This example assumes the gateway guarantees duplicate suppression for that key, including concurrent requests and uncertain outcomes. Adapt the endpoint, header, and payload to its documented contract.\n\n```ts\nimport { setTimeout as sleep } from \"node:timers/promises\";\nimport { performance } from \"node:perf_hooks\";\n\ntype Charge = {\n  amountMinor: number; // Integer minor units, e.g. cents.\n  currency: string;\n  paymentMethodToken: string; // Token, never raw card details.\n  idempotencyKey: string; // Persisted before the first attempt.\n};\n\nclass GatewayHttpError extends Error {\n  constructor(public readonly status: number) {\n    super(`Payment gateway returned HTTP ${status}`);\n  }\n}\n\nexport class ChargeOutcomeUnknown extends Error {\n  constructor(\n    public readonly idempotencyKey: string,\n    cause: unknown,\n  ) {\n    super(\"Charge outcome unresolved; reconcile using the same key\", { cause });\n  }\n}\n\nconst transientCodes = new Set([\n  \"ECONNRESET\",\n  \"ECONNREFUSED\",\n  \"ETIMEDOUT\",\n  \"EAI_AGAIN\",\n  \"EPIPE\",\n  \"UND_ERR_CONNECT_TIMEOUT\",\n  \"UND_ERR_HEADERS_TIMEOUT\",\n  \"UND_ERR_BODY_TIMEOUT\",\n  \"UND_ERR_SOCKET\",\n]);\n\nfunction isTransientNetworkError(error: unknown): boolean {\n  if (!(error instanceof Error)) return false;\n  if (error.name === \"TimeoutError\") return true;\n\n  const cause = error.cause as { code?: string } | undefined;\n  return !!cause?.code && transientCodes.has(cause.code);\n}\n\nfunction retryAfterMs(value: string | null): number {\n  if (!value) return 0;\n  if (/^\\d+$/.test(value)) return Number(value) * 1_000;\n\n  const date = Date.parse(value);\n  return Number.isNaN(date) ? 0 : Math.max(0, date - Date.now());\n}\n\nexport async function chargePayment(\n  charge: Charge,\n  config: { baseUrl: string; apiKey: string },\n): Promise<unknown> {\n  if (\n    !Number.isSafeInteger(charge.amountMinor) ||\n    charge.amountMinor <= 0 ||\n    !/^[A-Z]{3}$/.test(charge.currency) ||\n    !charge.paymentMethodToken ||\n    !/^[A-Za-z0-9_-]{1,128}$/.test(charge.idempotencyKey)\n  ) {\n    throw new Error(\"Invalid charge input\");\n  }\n\n  const endpoint = new URL(\"/charges\", config.baseUrl);\n  if (endpoint.protocol !== \"https:\" || !config.apiKey) {\n    throw new Error(\"HTTPS gateway URL and API key are required\");\n  }\n\n  // This function owns retries: three total attempts within 15 seconds.\n  const deadline = performance.now() + 15_000;\n  const body = JSON.stringify({\n    amount: charge.amountMinor,\n    currency: charge.currency,\n    payment_method: charge.paymentMethodToken,\n  });\n  let lastError: unknown;\n\n  for (let attempt = 0; attempt < 3; attempt++) {\n    const remaining = Math.floor(deadline - performance.now());\n    if (remaining <= 0) break;\n\n    let response: Response;\n    let responseBody: string;\n\n    try {\n      response = await fetch(endpoint, {\n        method: \"POST\",\n        redirect: \"error\",\n        headers: {\n          Authorization: `Bearer ${config.apiKey}`,\n          \"Content-Type\": \"application/json\",\n          \"Idempotency-Key\": charge.idempotencyKey,\n        },\n        body,\n        signal: AbortSignal.timeout(Math.min(5_000, remaining)),\n      });\n      responseBody = await response.text();\n    } catch (error) {\n      // A lost response does not prove the charge failed.\n      if (!isTransientNetworkError(error)) {\n        throw new ChargeOutcomeUnknown(charge.idempotencyKey, error);\n      }\n      lastError = error;\n      response = undefined!;\n      responseBody = \"\";\n    }\n\n    if (response) {\n      if (response.ok) {\n        try {\n          return JSON.parse(responseBody) as unknown;\n        } catch (error) {\n          throw new ChargeOutcomeUnknown(charge.idempotencyKey, error);\n        }\n      }\n\n      if (response.status !== 503) {\n        // No retries for declines, authentication errors, or other statuses.\n        throw new GatewayHttpError(response.status);\n      }\n      lastError = new GatewayHttpError(503);\n    }\n\n    if (attempt === 2) break;\n\n    const backoff = Math.random() * Math.min(2_000, 250 * 2 ** attempt);\n    const delay = Math.max(\n      backoff,\n      retryAfterMs(response?.headers.get(\"retry-after\") ?? null),\n    );\n\n    if (delay >= deadline - performance.now()) break;\n    await sleep(delay);\n  }\n\n  throw new ChargeOutcomeUnknown(charge.idempotencyKey, lastError);\n}\n```\n\nKeep gateway credentials in external configuration. Never reuse a key with a different payload; reconcile unresolved charges before the gateway’s deduplication window expires. Disable overlapping SDK or job retries.\n\nNo project or gateway was supplied, so this example was not compiled or integration-tested. Verify lost-response replay produces one charge, 503 recovery, immediate rejection of nonretryable responses, and retry exhaustion against the chosen gateway.",
+        "durationMs": 32780,
+        "usage": {
+          "input_tokens": 66451,
+          "cached_input_tokens": 53760,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1558,
+          "reasoning_output_tokens": 113
+        },
+        "sentPromptSha256": "e126f0e239568a2af299222958e8f0d6eee8f904156e62995777e125180c18fd",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "stable idempotency key",
+              "pass": true
+            },
+            {
+              "criterion": "bounded attempts",
+              "pass": true
+            },
+            {
+              "criterion": "backoff delay",
+              "pass": true
+            },
+            {
+              "criterion": "transient failure classification",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      }
+    },
+    {
+      "id": "state_variants",
+      "prompt": "Design a TypeScript type definition and status update handler for an asynchronous data export job that can be queued, processing (with integer progress percentage 0-100), completed (with download URL), or failed (with error message).",
+      "promptSha256": "89f134af911ff6b70a525291fcb3b6b5ba322ceeb1def8297413775a23cbfe4a",
+      "baseline": {
+        "status": "completed",
+        "output": "Use a discriminated union so each status carries only its relevant data. Validate progress at construction because TypeScript’s `number` includes fractions and values outside 0–100.\n\n```ts\ndeclare const percentageBrand: unique symbol;\ntype Percentage = number & { readonly [percentageBrand]: true };\n\nfunction percentage(value: number): Percentage {\n  if (!Number.isInteger(value) || value < 0 || value > 100) {\n    throw new RangeError(\"Progress must be an integer from 0 to 100\");\n  }\n  return value as Percentage;\n}\n\ntype ExportJob = { readonly id: string } & (\n  | { readonly status: \"queued\" }\n  | { readonly status: \"processing\"; readonly progress: Percentage }\n  | { readonly status: \"completed\"; readonly downloadUrl: string }\n  | { readonly status: \"failed\"; readonly errorMessage: string }\n);\n\nfunction assertNever(value: never): never {\n  throw new Error(`Unexpected export status: ${JSON.stringify(value)}`);\n}\n\nfunction handleStatusUpdate(job: ExportJob): string {\n  switch (job.status) {\n    case \"queued\":\n      return \"Export is queued.\";\n\n    case \"processing\":\n      return `Export is ${job.progress}% complete.`;\n\n    case \"completed\":\n      return `Download your export: ${job.downloadUrl}`;\n\n    case \"failed\":\n      return `Export failed: ${job.errorMessage}`;\n\n    default:\n      return assertNever(job);\n  }\n}\n\n// Example\nhandleStatusUpdate({\n  id: \"export-123\",\n  status: \"processing\",\n  progress: percentage(42),\n});\n```\n\nThe exhaustive switch produces a compile-time error if a new status is added without updating the handler. For API responses, validate the incoming data before treating it as `ExportJob`; a type assertion alone performs no runtime validation.",
+        "durationMs": 13150,
+        "usage": {
+          "input_tokens": 31726,
+          "cached_input_tokens": 27008,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 469,
+          "reasoning_output_tokens": 19
+        },
+        "sentPromptSha256": "89f134af911ff6b70a525291fcb3b6b5ba322ceeb1def8297413775a23cbfe4a",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "variant state model",
+              "pass": true
+            },
+            {
+              "criterion": "state-specific fields",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Missing heuristic evidence: state-specific fields"
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Use a discriminated union so each status carries only its relevant data. Validate progress at runtime because TypeScript’s `number` includes fractions and values outside 0–100.\n\n```ts\ntype ExportStatus =\n  | { readonly status: \"queued\" }\n  | { readonly status: \"processing\"; readonly progress: number }\n  | { readonly status: \"completed\"; readonly downloadUrl: string }\n  | { readonly status: \"failed\"; readonly errorMessage: string };\n\ntype ExportJob = {\n  readonly id: string;\n  readonly state: ExportStatus;\n};\n\nfunction updateExportStatus(\n  job: ExportJob,\n  next: ExportStatus,\n): ExportJob {\n  if (\n    next.status === \"processing\" &&\n    (!Number.isInteger(next.progress) ||\n      next.progress < 0 ||\n      next.progress > 100)\n  ) {\n    throw new RangeError(\"Progress must be an integer from 0 to 100.\");\n  }\n\n  // Replace the whole state so previous status fields don't linger.\n  return { ...job, state: { ...next } };\n}\n\n// Usage\nlet job: ExportJob = {\n  id: \"export-123\",\n  state: { status: \"queued\" },\n};\n\njob = updateExportStatus(job, {\n  status: \"processing\",\n  progress: 45,\n});\n\njob = updateExportStatus(job, {\n  status: \"completed\",\n  downloadUrl: \"https://example.com/exports/export-123.csv\",\n});\n```\n\nThe union requires a download URL for completion and an error message for failure. The handler rejects fractional, out-of-range, and nonfinite progress.\n\nThis permits any status transition; transition restrictions were not specified. For updates received as JSON, validate the entire payload before passing it to this typed handler. Code is illustrative; checks were not run.",
+        "durationMs": 19013,
+        "usage": {
+          "input_tokens": 42806,
+          "cached_input_tokens": 26368,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 656,
+          "reasoning_output_tokens": 153
+        },
+        "sentPromptSha256": "7457366d3b955b289055432c71453eb9937ba455cdc0dfdd38e6137961d2d448",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "variant state model",
+              "pass": true
+            },
+            {
+              "criterion": "state-specific fields",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Missing heuristic evidence: state-specific fields"
+        }
+      }
+    },
+    {
+      "id": "wrong_abstraction",
+      "prompt": "In our e-commerce codebase, two validation rules currently check the exact same fields:\n1. Billing address validation: requires postal code and country.\n2. Shipping address validation: requires postal code and country.\n\nA junior engineer submitted a PR merging them into a single generic `validateAddress(addr)` function. Review this change and recommend whether to merge them or keep them separate, explaining why.",
+      "promptSha256": "42b1b745c52f2696e0ee16d4ac52b1ccc83bb29e2b8e2506d6610ed2d94bd04d",
+      "baseline": {
+        "status": "completed",
+        "output": "**Keep billing and shipping validation separate based on the information given.** Identical checks don’t necessarily represent the same business rule.\n\nBilling validation serves payment requirements; shipping validation serves delivery requirements. Those policies can change independently—for example, billing might require a match with payment details, while shipping might restrict destination countries. A generic validator couples them, making a future change easier to apply accidentally to both.\n\nI’d leave this PR comment:\n\n> These validators currently share an implementation, but represent separate business policies. Please retain `validateBillingAddress` and `validateShippingAddress`. The small duplication is reasonable until we establish that these requirements should change together.\n\nIf postal code and country are an explicitly shared invariant, a small common helper behind those separate entry points is reasonable. **Extract shared knowledge, rather than merely matching code.**",
+        "durationMs": 12756,
+        "usage": {
+          "input_tokens": 36774,
+          "cached_input_tokens": 29696,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 351,
+          "reasoning_output_tokens": 15
+        },
+        "sentPromptSha256": "42b1b745c52f2696e0ee16d4ac52b1ccc83bb29e2b8e2506d6610ed2d94bd04d",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "independent domain responsibilities",
+              "pass": true
+            },
+            {
+              "criterion": "cost of coupling",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "**Keep the billing and shipping validators separate unless they enforce an explicitly shared business rule.** Identical field checks alone don’t establish that.\n\nThe skill’s relevant principle is: “Share code when callers follow the same rule and should change together.” Billing and shipping serve different purposes. Billing requirements might change for tax or payment processing; shipping requirements might change for carriers or delivery destinations. These are possible reasons for independent change, not demonstrated current defects.\n\nMy PR recommendation:\n\n- Preserve purpose-specific entry points such as `validateBillingAddress` and `validateShippingAddress`.\n- Share a small internal check only if postal code and country form a common requirement that both policies deliberately adopt.\n- Avoid adding billing/shipping flags to a generic validator if the policies later diverge.\n\nIf the domain owners confirm that both validators represent one policy and must change together, merging is reasonable. Otherwise, the small duplication costs less than coupling independent business decisions.\n\nThis recommendation is based on the described change; no PR code or tests were provided for verification.",
+        "durationMs": 13726,
+        "usage": {
+          "input_tokens": 39579,
+          "cached_input_tokens": 24576,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 343,
+          "reasoning_output_tokens": 36
+        },
+        "sentPromptSha256": "72e5bb16eb78cc172bf13b3e359a90f6d6e1c77814e5460b17744dd93b9c53de",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Fails to identify that identical syntax across distinct business domains is not justification for coupling.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Fails to identify that identical syntax across distinct business domains is not justification for coupling."
+        }
+      }
+    },
+    {
+      "id": "disposability_shutdown",
+      "prompt": "Write a Node.js background worker script that polls a message queue and processes incoming jobs. Ensure it is production-ready for deployment in containerized environments (Kubernetes / ECS).",
+      "promptSha256": "1bdce9d862f5381573eec3eacc0bd3bfbf0696bbcb96f42be0f31c8bf204d0be",
+      "baseline": {
+        "status": "completed",
+        "output": "Below is an SQS worker for Node.js 24+. It processes one job at a time and scales through container replicas. The workspace is read-only, so I’m providing the files inline.\n\nIt uses SQS long polling and deletes messages only after successful processing. Failed jobs remain available for redelivery. See [AWS’s SQS examples](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/javascript_sqs_code_examples.html).\n\nInstall the dependency and commit both package files:\n\n```sh\nnpm init -y\nnpm install --save-exact @aws-sdk/client-sqs\n```\n\nSave as `worker.mjs`:\n\n```js\nimport {\n  SQSClient,\n  ReceiveMessageCommand,\n  DeleteMessageCommand,\n} from \"@aws-sdk/client-sqs\";\nimport { setTimeout as sleep } from \"node:timers/promises\";\n\nfunction required(name) {\n  const value = process.env[name];\n  if (!value) throw new Error(`${name} is required`);\n  return value;\n}\n\nfunction integer(name, fallback, min, max) {\n  const value = Number(process.env[name] ?? fallback);\n  if (!Number.isInteger(value) || value < min || value > max) {\n    throw new Error(`${name} must be an integer between ${min} and ${max}`);\n  }\n  return value;\n}\n\nconst queueUrl = required(\"QUEUE_URL\");\nconst jobEndpoint = new URL(required(\"JOB_ENDPOINT\"));\nif (jobEndpoint.protocol !== \"https:\") {\n  throw new Error(\"JOB_ENDPOINT must use HTTPS\");\n}\n\nconst jobTimeoutMs = integer(\"JOB_TIMEOUT_MS\", 30_000, 1000, 300_000);\nconst shutdownMs = integer(\"SHUTDOWN_TIMEOUT_MS\", 45_000, 1000, 600_000);\n\n// Covers the receive request, job processing, deletion, and a safety margin.\nconst visibilitySeconds = Math.ceil(jobTimeoutMs / 1000) + 90;\n\nconst sqs = new SQSClient({\n  region: required(\"AWS_REGION\"),\n  maxAttempts: 3,\n});\n\nconst pollController = new AbortController();\nconst workController = new AbortController();\n\nlet stopping = false;\nlet shutdownTimer;\nlet exitCode = 0;\n\nfunction log(level, event, fields = {}) {\n  console.log(JSON.stringify({\n    timestamp: new Date().toISOString(),\n    level,\n    event,\n    ...fields,\n  }));\n}\n\nfunction shutdown(reason, code = 0) {\n  exitCode = Math.max(exitCode, code);\n  if (stopping) return;\n\n  stopping = true;\n  log(\"info\", \"shutdown_started\", { reason });\n  pollController.abort(); // Interrupt polling/backoff; let current work drain.\n\n  shutdownTimer = setTimeout(() => {\n    log(\"error\", \"shutdown_deadline_exceeded\");\n    workController.abort();\n    // Leave unfinished jobs unacknowledged for redelivery.\n    process.exit(1);\n  }, shutdownMs);\n}\n\nprocess.on(\"SIGTERM\", () => shutdown(\"SIGTERM\"));\nprocess.on(\"SIGINT\", () => shutdown(\"SIGINT\"));\n\nprocess.on(\"uncaughtException\", (error) => {\n  log(\"error\", \"uncaught_exception\", { errorType: error.name });\n  // After an uncaught exception, terminate rather than continue processing.\n  process.exit(1);\n});\n\nprocess.on(\"unhandledRejection\", () => {\n  log(\"error\", \"unhandled_rejection\");\n  process.exit(1);\n});\n\nasync function processJob(message, signal) {\n  const job = JSON.parse(message.Body ?? \"\");\n\n  if (\n    !job ||\n    typeof job !== \"object\" ||\n    typeof job.id !== \"string\" ||\n    !/^[A-Za-z0-9._:-]{1,128}$/.test(job.id)\n  ) {\n    throw new Error(\"Invalid job: expected a stable id\");\n  }\n\n  // Replace this HTTP call with your business logic if appropriate.\n  // The receiver must durably deduplicate this key and return success only\n  // after committing the effect. Every I/O operation must honor signal.\n  const response = await fetch(jobEndpoint, {\n    method: \"POST\",\n    headers: {\n      \"content-type\": \"application/json\",\n      \"idempotency-key\": job.id,\n    },\n    body: JSON.stringify(job),\n    signal,\n    redirect: \"error\",\n  });\n\n  try {\n    if (!response.ok) {\n      throw new Error(`Job endpoint returned HTTP ${response.status}`);\n    }\n  } finally {\n    await response.body?.cancel();\n  }\n}\n\nasync function run() {\n  let pollFailures = 0;\n\n  log(\"info\", \"worker_started\");\n\n  while (!stopping) {\n    let result;\n\n    try {\n      result = await sqs.send(\n        new ReceiveMessageCommand({\n          QueueUrl: queueUrl,\n          MaxNumberOfMessages: 1,\n          WaitTimeSeconds: 20,\n          VisibilityTimeout: visibilitySeconds,\n        }),\n        {\n          abortSignal: AbortSignal.any([\n            pollController.signal,\n            AbortSignal.timeout(30_000),\n          ]),\n        },\n      );\n      pollFailures = 0;\n    } catch (error) {\n      if (stopping) break;\n\n      pollFailures++;\n      log(\"error\", \"poll_failed\", {\n        errorType: error.name,\n        consecutiveFailures: pollFailures,\n      });\n\n      // SDK retries individual requests; this backs off between failed polls.\n      const capMs = Math.min(30_000, 500 * 2 ** Math.min(pollFailures, 6));\n      await sleep(Math.floor(Math.random() * capMs), undefined, {\n        signal: pollController.signal,\n      }).catch((error) => {\n        if (!stopping) throw error;\n      });\n      continue;\n    }\n\n    // A receive may complete concurrently with SIGTERM.\n    // Do not start the returned job; its visibility will expire.\n    if (stopping) break;\n\n    for (const message of result.Messages ?? []) {\n      try {\n        await processJob(\n          message,\n          AbortSignal.any([\n            workController.signal,\n            AbortSignal.timeout(jobTimeoutMs),\n          ]),\n        );\n\n        await sqs.send(\n          new DeleteMessageCommand({\n            QueueUrl: queueUrl,\n            ReceiptHandle: message.ReceiptHandle,\n          }),\n          {\n            abortSignal: AbortSignal.any([\n              workController.signal,\n              AbortSignal.timeout(10_000),\n            ]),\n          },\n        );\n\n        log(\"info\", \"job_completed\", { messageId: message.MessageId });\n      } catch (error) {\n        // Never acknowledge failed or uncertain work.\n        log(\"error\", \"job_failed\", {\n          messageId: message.MessageId,\n          errorType: error.name,\n        });\n\n        if (error instanceof SyntaxError) {\n          // Invalid JSON is retried and eventually handled by the queue DLQ.\n        }\n      }\n    }\n  }\n}\n\ntry {\n  await run();\n} catch (error) {\n  log(\"error\", \"worker_failed\", { errorType: error.name });\n  exitCode = 1;\n} finally {\n  clearTimeout(shutdownTimer);\n  sqs.destroy();\n  log(\"info\", \"worker_stopped\", { exitCode });\n  process.exitCode = exitCode;\n}\n```\n\nSave as `Dockerfile`:\n\n```dockerfile\nFROM node:24-bookworm-slim\nENV NODE_ENV=production\nWORKDIR /app\n\nCOPY package.json package-lock.json ./\nRUN npm ci --omit=dev && npm cache clean --force\n\nCOPY --chown=node:node worker.mjs ./\nUSER node\nSTOPSIGNAL SIGTERM\nCMD [\"node\", \"worker.mjs\"]\n```\n\nDeployment requirements:\n\n- Set `AWS_REGION`, `QUEUE_URL`, and `JOB_ENDPOINT`. Use an ECS task role or Kubernetes workload identity for AWS credentials.\n- Configure an SQS dead-letter queue and bounded `maxReceiveCount` so poison jobs do not retry forever.\n- Give the container at least **60 seconds** to terminate: Kubernetes `terminationGracePeriodSeconds: 60` or ECS `stopTimeout: 60`.\n- Make the job endpoint enforce durable idempotency. A crash after committing an effect but before deleting the message can cause duplicate delivery.\n- Scale replicas using queue backlog and oldest-message age. Collect JSON stdout logs and alert on repeated polling failures and DLQ growth.\n- Pin the container image by digest in your release pipeline.\n\nThis implementation assumes bounded, asynchronous jobs; longer jobs need visibility renewal. It has not been integration-tested against your queue or job endpoint.",
+        "durationMs": 42490,
+        "usage": {
+          "input_tokens": 52939,
+          "cached_input_tokens": 43904,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2028,
+          "reasoning_output_tokens": 78
+        },
+        "sentPromptSha256": "1bdce9d862f5381573eec3eacc0bd3bfbf0696bbcb96f42be0f31c8bf204d0be",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Does not stop polling or accepting new work when shutdown begins.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Does not stop polling or accepting new work when shutdown begins."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Below is an SQS worker for a container running Node.js. It processes one job at a time; scale container replicas for concurrency.\n\nIt stops polling on SIGTERM/SIGINT, drains the active job within a deadline, and deletes messages only after successful processing. Failed or interrupted messages become available after their visibility timeout. SQS can deliver duplicates, so the job handler must make effects idempotent. [SQS delivery and visibility semantics](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html)\n\nInstall `@aws-sdk/client-sqs`, commit the generated lockfile, and save this as `worker.mjs`:\n\n```js\nimport {\n  SQSClient,\n  ReceiveMessageCommand,\n  DeleteMessageCommand,\n} from \"@aws-sdk/client-sqs\";\nimport { setTimeout as sleep } from \"node:timers/promises\";\nimport { processJob } from \"./jobs.mjs\";\n\nfunction integer(name, fallback, min, max) {\n  const value = Number(process.env[name] ?? fallback);\n  if (!Number.isInteger(value) || value < min || value > max) {\n    throw new Error(`${name} must be an integer between ${min} and ${max}`);\n  }\n  return value;\n}\n\nconst queueUrl = process.env.QUEUE_URL;\nif (!queueUrl) throw new Error(\"QUEUE_URL is required\");\nif (new URL(queueUrl).protocol !== \"https:\") {\n  throw new Error(\"QUEUE_URL must use HTTPS\");\n}\n\nconst jobTimeoutMs = integer(\"JOB_TIMEOUT_MS\", 20_000, 1_000, 300_000);\nconst shutdownMs = integer(\"SHUTDOWN_MS\", 25_000, 1_000, 600_000);\nconst visibilitySeconds = integer(\"VISIBILITY_SECONDS\", 60, 1, 43_200);\n\n// Budget for receiving, processing, and acknowledging a message.\nif (visibilitySeconds * 1000 < jobTimeoutMs + 30_000) {\n  throw new Error(\"VISIBILITY_SECONDS must exceed JOB_TIMEOUT_MS by 30 seconds\");\n}\n\nconst sqs = new SQSClient({\n  // Credentials come from the SDK credential chain: use a workload role.\n  maxAttempts: 3,\n});\n\nconst log = (level, event, fields = {}) => {\n  console.log(JSON.stringify({\n    time: new Date().toISOString(),\n    level,\n    event,\n    ...fields,\n  }));\n};\n\nlet stopping = false;\nlet pollController;\nlet activeJobController;\nlet shutdownTimer;\n\nfunction stop(signal) {\n  if (stopping) return;\n  stopping = true;\n  log(\"info\", \"shutdown_started\", { signal });\n\n  // Cancel long polling, but allow the current job to finish.\n  pollController?.abort();\n\n  shutdownTimer = setTimeout(() => {\n    activeJobController?.abort(new Error(\"Shutdown deadline exceeded\"));\n    log(\"error\", \"shutdown_deadline_exceeded\");\n    // Do not acknowledge unfinished work. SQS will redeliver it.\n    process.exit(1);\n  }, shutdownMs);\n}\n\nprocess.on(\"SIGTERM\", stop);\nprocess.on(\"SIGINT\", stop);\n\nasync function handleMessage(message) {\n  const controller = new AbortController();\n  activeJobController = controller;\n\n  // Exit if a handler ignores cancellation. Continuing could let an expired\n  // job overlap with another consumer after its visibility timeout.\n  const timer = setTimeout(() => {\n    controller.abort(new Error(\"Job deadline exceeded\"));\n    log(\"error\", \"job_deadline_exceeded\", { messageId: message.MessageId });\n    process.exit(1);\n  }, jobTimeoutMs);\n\n  try {\n    const job = JSON.parse(message.Body ?? \"\");\n    if (\n      !job ||\n      typeof job !== \"object\" ||\n      Array.isArray(job) ||\n      typeof job.id !== \"string\" ||\n      !job.id.trim() ||\n      typeof job.type !== \"string\"\n    ) {\n      throw new Error(\"Invalid job envelope\");\n    }\n\n    await processJob(job, { signal: controller.signal });\n\n    clearTimeout(timer);\n\n    // Separate timeout so acknowledgement can finish during graceful shutdown.\n    await sqs.send(\n      new DeleteMessageCommand({\n        QueueUrl: queueUrl,\n        ReceiptHandle: message.ReceiptHandle,\n      }),\n      { abortSignal: AbortSignal.timeout(5_000) },\n    );\n\n    log(\"info\", \"job_completed\", { messageId: message.MessageId });\n  } catch (error) {\n    // Retain the message for retry / dead-letter routing. Avoid logging bodies,\n    // credentials, or handler error messages that may contain sensitive data.\n    log(\"error\", \"job_failed\", {\n      messageId: message.MessageId,\n      errorType: error?.name ?? \"UnknownError\",\n    });\n  } finally {\n    clearTimeout(timer);\n    activeJobController = undefined;\n  }\n}\n\nasync function main() {\n  let pollFailures = 0;\n  log(\"info\", \"worker_started\");\n\n  while (!stopping) {\n    pollController = new AbortController();\n\n    let response;\n    try {\n      response = await sqs.send(\n        new ReceiveMessageCommand({\n          QueueUrl: queueUrl,\n          MaxNumberOfMessages: 1,\n          WaitTimeSeconds: 20,\n          VisibilityTimeout: visibilitySeconds,\n        }),\n        {\n          abortSignal: AbortSignal.any([\n            pollController.signal,\n            AbortSignal.timeout(25_000),\n          ]),\n        },\n      );\n      pollFailures = 0;\n    } catch (error) {\n      if (stopping) break;\n\n      pollFailures += 1;\n      log(\"error\", \"poll_failed\", {\n        errorType: error?.name ?? \"UnknownError\",\n        consecutiveFailures: pollFailures,\n      });\n\n      // Bound recovery; let the platform restart an unhealthy worker.\n      if (pollFailures >= 8) throw new Error(\"Polling recovery exhausted\");\n\n      const cap = Math.min(30_000, 1_000 * 2 ** (pollFailures - 1));\n      try {\n        await sleep(Math.random() * cap, undefined, {\n          signal: pollController.signal,\n        });\n      } catch (error) {\n        if (!stopping) throw error;\n      }\n      continue;\n    }\n\n    // A receive may complete concurrently with shutdown. Leave its message\n    // unacknowledged rather than starting new work.\n    if (stopping) break;\n\n    const message = response.Messages?.[0];\n    if (message) await handleMessage(message);\n  }\n}\n\ntry {\n  await main();\n} catch (error) {\n  log(\"error\", \"worker_failed\", { errorType: error?.name ?? \"UnknownError\" });\n  process.exitCode = 1;\n} finally {\n  clearTimeout(shutdownTimer);\n  sqs.destroy();\n  log(\"info\", \"worker_stopped\");\n}\n```\n\n`jobs.mjs` is the application-specific handler. It must validate each job type, propagate cancellation to I/O, and return only after durable completion. Use `job.id` as a persistent idempotency key, enforced atomically with database changes or passed to an external API that supports idempotency. An in-memory set cannot protect against restarts.\n\nContainer setup:\n\n```dockerfile\nFROM node:24-bookworm-slim\nWORKDIR /app\nENV NODE_ENV=production\nCOPY package.json package-lock.json ./\nRUN npm ci --omit=dev\nCOPY --chown=node:node worker.mjs jobs.mjs ./\nUSER node\nCMD [\"node\", \"worker.mjs\"]\n```\n\nDeployment requirements:\n\n- Set `QUEUE_URL` and `AWS_REGION`; use Kubernetes workload identity or an ECS task role with queue-scoped receive/delete permissions.\n- Configure an SQS dead-letter queue with a bounded receive count, such as five, and alert on its backlog.\n- Set Kubernetes `terminationGracePeriodSeconds` or ECS `stopTimeout` above `SHUTDOWN_MS`, allowing additional shutdown overhead. The defaults fit a 30-second termination window without a delaying `preStop` hook.\n- Collect structured stdout logs and monitor queue age, backlog, job failures, and worker restarts.\n- Keep CPU-heavy work off the main event loop so shutdown signals and deadline timers remain responsive.\n\nThe filesystem was read-only, so no files were created. This implementation has not been executed or integration-tested; before deployment, verify successful acknowledgement, duplicate delivery, poison-message routing, queue outages, and SIGTERM during both polling and processing.",
+        "durationMs": 43750,
+        "usage": {
+          "input_tokens": 58600,
+          "cached_input_tokens": 47488,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2066,
+          "reasoning_output_tokens": 28
+        },
+        "sentPromptSha256": "92daadcc26bd2ea7cf0d269d9ca6a96172772ef112d8c0bb3339701e5263052a",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Does not stop polling or accepting new work when shutdown begins.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Does not stop polling or accepting new work when shutdown begins."
+        }
+      }
+    },
+    {
+      "id": "config_telemetry_safety",
+      "prompt": "Write an HTTP configuration loader and request logging middleware in Node.js/TypeScript. The service connects to a database and an external API with authentication tokens.",
+      "promptSha256": "b53601c8e660b93d6608aa9eeb6ca45024b595610f0e1acdc34e613f34af5d0b",
+      "baseline": {
+        "status": "completed",
+        "output": "The workspace is empty and read-only, so I can provide the implementation here but cannot save or run it. This uses Node’s HTTP types and also works as Express middleware.\n\nConfiguration comes from environment variables. Validation errors report variable names without exposing values. Request logs use an allowlist and exclude URLs, headers, bodies, tokens, and database connection strings.\n\n```ts\n// config.ts\nexport interface Config {\n  readonly port: number;\n  readonly databaseUrl: string;\n  readonly externalApiUrl: string;\n  readonly externalApiToken: string;\n}\n\nexport function loadConfig(\n  env: NodeJS.ProcessEnv = process.env,\n): Readonly<Config> {\n  const errors: string[] = [];\n\n  function required(name: string): string {\n    const value = env[name];\n    if (!value || value.trim() === \"\") {\n      errors.push(`${name} is required`);\n      return \"\";\n    }\n    return value;\n  }\n\n  function endpoint(\n    name: string,\n    value: string,\n    protocols: string[],\n    forbidCredentials: boolean,\n  ): string {\n    if (!value) return value;\n\n    try {\n      const url = new URL(value);\n      if (\n        value !== value.trim() ||\n        !protocols.includes(url.protocol) ||\n        !url.hostname ||\n        url.hash ||\n        (forbidCredentials &&\n          (url.username || url.password || url.search))\n      ) {\n        throw new Error();\n      }\n    } catch {\n      errors.push(`${name} must be a valid supported endpoint`);\n    }\n\n    return value;\n  }\n\n  const rawPort = env.PORT ?? \"3000\";\n  const port = Number(rawPort);\n  if (\n    !/^[0-9]+$/.test(rawPort) ||\n    !Number.isInteger(port) ||\n    port < 1 ||\n    port > 65535\n  ) {\n    errors.push(\"PORT must be an integer between 1 and 65535\");\n  }\n\n  // This implementation assumes PostgreSQL.\n  const databaseUrl = endpoint(\n    \"DATABASE_URL\",\n    required(\"DATABASE_URL\"),\n    [\"postgres:\", \"postgresql:\"],\n    false,\n  );\n\n  const externalApiUrl = endpoint(\n    \"EXTERNAL_API_URL\",\n    required(\"EXTERNAL_API_URL\"),\n    [\"https:\"],\n    true,\n  );\n\n  const externalApiToken = required(\"EXTERNAL_API_TOKEN\");\n  if (\n    externalApiToken &&\n    !/^[A-Za-z0-9\\-._~+/]+=*$/.test(externalApiToken)\n  ) {\n    errors.push(\"EXTERNAL_API_TOKEN must be a valid bearer token\");\n  }\n\n  if (errors.length) {\n    throw new Error(`Invalid configuration: ${errors.join(\"; \")}`);\n  }\n\n  return Object.freeze({\n    port,\n    databaseUrl,\n    externalApiUrl,\n    externalApiToken,\n  });\n}\n```\n\n```ts\n// request-logging.ts\nimport { randomUUID } from \"node:crypto\";\nimport type { IncomingMessage, ServerResponse } from \"node:http\";\n\ninterface RequestLog {\n  event: \"http_request\";\n  timestamp: string;\n  requestId: string;\n  method: string;\n  statusCode: number | null;\n  durationMs: number;\n  outcome: \"finished\" | \"aborted\";\n}\n\ntype LogSink = (entry: Readonly<RequestLog>) => void;\n\nconst methods = new Set([\n  \"GET\", \"HEAD\", \"POST\", \"PUT\", \"PATCH\",\n  \"DELETE\", \"OPTIONS\", \"CONNECT\", \"TRACE\",\n]);\n\nconst stdoutSink: LogSink = (entry) => {\n  process.stdout.write(`${JSON.stringify(entry)}\\n`);\n};\n\nexport function requestLogging(log: LogSink = stdoutSink) {\n  return (\n    req: IncomingMessage,\n    res: ServerResponse,\n    next: () => void,\n  ): void => {\n    const started = process.hrtime.bigint();\n    const requestId = randomUUID();\n    let logged = false;\n\n    // Generate locally; do not trust incoming correlation headers.\n    res.setHeader(\"X-Request-ID\", requestId);\n\n    function complete(outcome: RequestLog[\"outcome\"]): void {\n      if (logged) return;\n      logged = true;\n\n      res.off(\"finish\", onFinish);\n      res.off(\"close\", onClose);\n\n      const entry: RequestLog = {\n        event: \"http_request\",\n        timestamp: new Date().toISOString(),\n        requestId,\n        method: methods.has(req.method ?? \"\")\n          ? req.method!\n          : \"OTHER\",\n        statusCode: res.headersSent ? res.statusCode : null,\n        durationMs:\n          Number(process.hrtime.bigint() - started) / 1_000_000,\n        outcome,\n      };\n\n      try {\n        log(Object.freeze(entry));\n      } catch {\n        // A synchronous logging failure must not break the request.\n        // Do not print the error: it could contain sensitive data.\n      }\n    }\n\n    function onFinish(): void {\n      complete(\"finished\");\n    }\n\n    function onClose(): void {\n      complete(res.writableFinished ? \"finished\" : \"aborted\");\n    }\n\n    res.once(\"finish\", onFinish);\n    res.once(\"close\", onClose);\n    next();\n  };\n}\n```\n\nLoad configuration once before starting the server. Install logging before routes or authentication so rejected requests are recorded too:\n\n```ts\nconst config = loadConfig();\n\napp.use(requestLogging());\n// Register authentication and routes here.\napp.listen(config.port);\n```\n\nInject secrets through the deployment environment or secret manager. Pass `config.databaseUrl` to your PostgreSQL client and send the API token in an `Authorization: Bearer …` header. Never log the configuration object or raw client errors, which may contain credentials.\n\nVerification remains unrun due to the read-only workspace. Relevant tests should cover invalid configuration without value leakage, secret-bearing requests, and exactly one log entry for completed or aborted responses.",
+        "durationMs": 29203,
+        "usage": {
+          "input_tokens": 49031,
+          "cached_input_tokens": 44032,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1505,
+          "reasoning_output_tokens": 96
+        },
+        "sentPromptSha256": "b53601c8e660b93d6608aa9eeb6ca45024b595610f0e1acdc34e613f34af5d0b",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Configuration must be externalized via environment variables.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Configuration must be externalized via environment variables."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Below is a dependency-free implementation using Node’s HTTP types. Configuration comes only from environment variables; invalid configuration fails at startup without exposing supplied values.\n\n```ts\n// config.ts\nexport interface Config {\n  readonly http: {\n    readonly host: string;\n    readonly port: number;\n  };\n  readonly database: {\n    readonly url: string;\n    readonly token: string;\n  };\n  readonly api: {\n    readonly baseUrl: string;\n    readonly token: string;\n  };\n}\n\nexport function loadConfig(\n  env: Readonly<Record<string, string | undefined>> = process.env,\n): Config {\n  function required(name: string): string {\n    const value = env[name];\n    if (value === undefined || value.trim() === \"\") {\n      throw new Error(`${name} is required`);\n    }\n    return value;\n  }\n\n  function endpoint(name: string, protocols: readonly string[]): string {\n    const value = required(name);\n    let parsed: URL;\n\n    try {\n      parsed = new URL(value);\n    } catch {\n      // Do not include the value or the parser's original exception.\n      throw new Error(`${name} must be a valid absolute URL`);\n    }\n\n    if (\n      !protocols.includes(parsed.protocol) ||\n      !parsed.hostname ||\n      parsed.username ||\n      parsed.password ||\n      parsed.search ||\n      parsed.hash\n    ) {\n      throw new Error(\n        `${name} has an unsupported scheme, missing host, ` +\n        \"or embedded credentials, query, or fragment\",\n      );\n    }\n\n    return value;\n  }\n\n  function token(name: string): string {\n    const value = required(name);\n    // Suitable for an HTTP Authorization header; no whitespace/control bytes.\n    if (!/^[\\x21-\\x7e]+$/.test(value)) {\n      throw new Error(`${name} must contain only visible ASCII characters`);\n    }\n    return value;\n  }\n\n  const portText = env.PORT ?? \"3000\";\n  if (!/^[0-9]+$/.test(portText)) {\n    throw new Error(\"PORT must be an integer between 1 and 65535\");\n  }\n\n  const port = Number(portText);\n  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {\n    throw new Error(\"PORT must be an integer between 1 and 65535\");\n  }\n\n  return Object.freeze({\n    http: Object.freeze({\n      host: env.HOST === undefined ? \"0.0.0.0\" : required(\"HOST\"),\n      port,\n    }),\n    database: Object.freeze({\n      // PostgreSQL assumed; adjust schemes for your database driver.\n      url: endpoint(\"DATABASE_URL\", [\"postgres:\", \"postgresql:\"]),\n      token: token(\"DATABASE_TOKEN\"),\n    }),\n    api: Object.freeze({\n      baseUrl: endpoint(\"API_BASE_URL\", [\"https:\"]),\n      token: token(\"API_TOKEN\"),\n    }),\n  });\n}\n```\n\nThe middleware logs an internally generated request ID, completion status, and duration. It deliberately avoids raw paths because path segments can also contain secrets or personal data.\n\n```ts\n// request-logging.ts\nimport { randomUUID } from \"node:crypto\";\nimport type { IncomingMessage, ServerResponse } from \"node:http\";\n\ninterface RequestLog {\n  event: \"http_request\";\n  requestId: string;\n  method: string;\n  outcome: \"finished\" | \"aborted\";\n  statusCode: number | null;\n  durationMs: number;\n}\n\ntype LogWriter = (entry: RequestLog) => void;\n\nconst standardMethods = new Set([\n  \"GET\", \"HEAD\", \"POST\", \"PUT\", \"PATCH\", \"DELETE\", \"OPTIONS\", \"CONNECT\", \"TRACE\",\n]);\n\nconst writeStdout: LogWriter = (entry) => {\n  process.stdout.write(`${JSON.stringify(entry)}\\n`);\n};\n\nexport function requestLogging(write: LogWriter = writeStdout) {\n  return (\n    req: IncomingMessage,\n    res: ServerResponse,\n    next: () => void,\n  ): void => {\n    const requestId = randomUUID();\n    const started = process.hrtime.bigint();\n    const method = standardMethods.has(req.method ?? \"\")\n      ? req.method!\n      : \"OTHER\";\n\n    // Do not trust or echo a client-supplied request ID.\n    res.setHeader(\"X-Request-Id\", requestId);\n\n    let recorded = false;\n\n    function record(outcome: RequestLog[\"outcome\"]): void {\n      if (recorded) return;\n      recorded = true;\n\n      res.off(\"finish\", onFinish);\n      res.off(\"close\", onClose);\n\n      const entry: RequestLog = {\n        event: \"http_request\",\n        requestId,\n        method,\n        outcome,\n        statusCode:\n          outcome === \"finished\" || res.headersSent ? res.statusCode : null,\n        durationMs:\n          Number(process.hrtime.bigint() - started) / 1_000_000,\n      };\n\n      try {\n        write(entry);\n      } catch {\n        // A synchronous logging failure must not break request handling.\n        // No fallback dump of the request, configuration, or exception.\n      }\n    }\n\n    function onFinish(): void {\n      record(\"finished\");\n    }\n\n    function onClose(): void {\n      record(res.writableFinished ? \"finished\" : \"aborted\");\n    }\n\n    res.once(\"finish\", onFinish);\n    res.once(\"close\", onClose);\n    next();\n  };\n}\n```\n\nLoad configuration before opening connections or listening:\n\n```ts\nimport { createServer } from \"node:http\";\nimport { loadConfig } from \"./config.js\";\nimport { requestLogging } from \"./request-logging.js\";\n\nconst config = loadConfig();\nconst logRequest = requestLogging();\n\ncreateServer((req, res) => {\n  logRequest(req, res, () => {\n    res.writeHead(200, { \"Content-Type\": \"text/plain\" });\n    res.end(\"OK\\n\");\n  });\n}).listen(config.http.port, config.http.host);\n```\n\nSupply `DATABASE_URL`, `DATABASE_TOKEN`, `API_BASE_URL`, and `API_TOKEN` through the deployment environment or secret manager. Never log the configuration object. Pass tokens separately to the database driver and API client; configure their timeouts using the clients’ supported options.\n\nNo files were written or tests run because the workspace is read-only. Before deployment, verify invalid configuration, secret-free error messages and logs, and exactly one log entry for both completed and aborted requests. Database connectivity and API authentication require integration checks with the chosen clients.",
+        "durationMs": 35209,
+        "usage": {
+          "input_tokens": 67448,
+          "cached_input_tokens": 53760,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1829,
+          "reasoning_output_tokens": 133
+        },
+        "sentPromptSha256": "158c52ae50b547f8237e49fcc69bd37674d72dc2cdbf64d374bfbd36d777245e",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Configuration must be externalized via environment variables.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Configuration must be externalized via environment variables."
+        }
+      }
+    },
+    {
+      "id": "dwim_dry_run",
+      "prompt": "Write a CLI tool script in Python to prune expired cache directories older than a given number of days. It must support a `--dry-run` flag and provide clear operator feedback.",
+      "promptSha256": "abac9e67d43912fcb498b64f8551608d9a4408a1c995ffc57cb79a3999f679cb",
+      "baseline": {
+        "status": "completed",
+        "output": "Save as `prune_cache.py`. It prunes immediate child directories based on their modification time, skips symlinks, and reports failures with a nonzero exit code.\n\n```python\n#!/usr/bin/env python3\nimport argparse\nimport math\nimport shutil\nimport stat\nimport sys\nimport time\nfrom pathlib import Path\n\n\ndef positive_days(value):\n    try:\n        days = float(value)\n    except ValueError:\n        raise argparse.ArgumentTypeError(\"days must be a positive number\")\n    if not math.isfinite(days) or days <= 0:\n        raise argparse.ArgumentTypeError(\"days must be a positive finite number\")\n    return days\n\n\ndef main():\n    parser = argparse.ArgumentParser(\n        description=\"Delete cache directories older than the given number of days.\",\n        epilog=\"Age uses each immediate child directory's modification time, \"\n               \"not the timestamps of files inside it.\",\n    )\n    parser.add_argument(\"cache_root\", type=Path, help=\"Parent of cache directories\")\n    parser.add_argument(\"--days\", required=True, type=positive_days)\n    parser.add_argument(\n        \"--dry-run\", action=\"store_true\", help=\"Show candidates without deleting\"\n    )\n    args = parser.parse_args()\n\n    try:\n        root = args.cache_root.resolve(strict=True)\n        if not root.is_dir():\n            parser.error(f\"not a directory: {root}\")\n        if root == Path(root.anchor):\n            parser.error(\"refusing to prune a filesystem root\")\n        entries = sorted(root.iterdir())\n    except OSError as exc:\n        parser.error(str(exc))\n\n    now = time.time()\n    cutoff = now - args.days * 86400\n    deleted = candidates = skipped = errors = 0\n    mode = \"DRY RUN\" if args.dry_run else \"DELETE\"\n    print(f\"{mode}: {str(root)!r}; threshold: {args.days:g} days\")\n\n    for entry in entries:\n        try:\n            metadata = entry.lstat()\n            if not stat.S_ISDIR(metadata.st_mode):\n                skipped += 1\n                continue\n            if metadata.st_mtime >= cutoff:\n                skipped += 1\n                continue\n\n            candidates += 1\n            age = (now - metadata.st_mtime) / 86400\n            if args.dry_run:\n                print(f\"WOULD DELETE {str(entry)!r} (age: {age:.1f} days)\")\n            else:\n                shutil.rmtree(entry)\n                deleted += 1\n                print(f\"DELETED {str(entry)!r} (age: {age:.1f} days)\")\n        except OSError as exc:\n            errors += 1\n            print(f\"ERROR {str(entry)!r}: {exc}\", file=sys.stderr)\n\n    if args.dry_run:\n        print(f\"Dry run complete: {candidates} would be deleted; \"\n              f\"{skipped} skipped; {errors} errors. Nothing deleted.\")\n    else:\n        print(f\"Complete: {deleted} deleted; {skipped} skipped; {errors} errors.\")\n    return 1 if errors else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n```\n\nPreview, then delete:\n\n```bash\npython3 prune_cache.py /path/to/cache --days 30 --dry-run\npython3 prune_cache.py /path/to/cache --days 30\n```\n\nDeleting an expired directory removes all its contents, including newer files. Run against a cache that is not being actively modified.",
+        "durationMs": 24237,
+        "usage": {
+          "input_tokens": 61859,
+          "cached_input_tokens": 50048,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1144,
+          "reasoning_output_tokens": 63
+        },
+        "sentPromptSha256": "abac9e67d43912fcb498b64f8551608d9a4408a1c995ffc57cb79a3999f679cb",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "guarded deletion",
+              "pass": true
+            },
+            {
+              "criterion": "dry-run branch",
+              "pass": true
+            },
+            {
+              "criterion": "operator feedback",
+              "pass": true
+            },
+            {
+              "criterion": "input validation",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Save this as `prune_cache.py`. It uses only Python’s standard library.\n\n“Older” means the immediate child directory’s modification time; changes inside nested files may not update that timestamp. Use it on a cache root whose entries are no longer being written.\n\n```python\n#!/usr/bin/env python3\n\"\"\"Prune immediate cache subdirectories by directory modification time.\"\"\"\n\nimport argparse\nimport math\nimport shutil\nimport stat\nimport sys\nimport time\nfrom pathlib import Path\n\n\ndef positive_days(value):\n    try:\n        days = float(value)\n    except ValueError:\n        raise argparse.ArgumentTypeError(\"days must be a positive number\")\n    if not math.isfinite(days) or days <= 0:\n        raise argparse.ArgumentTypeError(\"days must be finite and greater than zero\")\n    return days\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"cache_root\", type=Path, help=\"directory containing cache entries\")\n    parser.add_argument(\"--days\", required=True, type=positive_days,\n                        help=\"prune directories older than this many days\")\n    parser.add_argument(\"--dry-run\", action=\"store_true\",\n                        help=\"show planned deletions without changing anything\")\n    args = parser.parse_args()\n\n    try:\n        root = args.cache_root.resolve(strict=True)\n        if not root.is_dir():\n            parser.error(\"cache_root must be a directory\")\n        if root == Path(root.anchor):\n            parser.error(\"refusing to prune a filesystem root\")\n        entries = sorted(root.iterdir())\n    except OSError as exc:\n        parser.error(f\"cannot read cache root: {exc}\")\n\n    now = time.time()\n    cutoff = now - args.days * 86400\n    matched = removed = errors = 0\n    mode = \"DRY RUN\" if args.dry_run else \"PRUNE\"\n    print(f\"{mode}: {str(root)!r}; threshold: {args.days:g} days\")\n\n    for entry in entries:\n        try:\n            info = entry.lstat()\n            # lstat avoids following symlinks, including directory symlinks.\n            if not stat.S_ISDIR(info.st_mode) or info.st_mtime >= cutoff:\n                continue\n\n            matched += 1\n            age = (now - info.st_mtime) / 86400\n            if args.dry_run:\n                print(f\"Would remove {str(entry)!r} (age: {age:.1f} days)\")\n            else:\n                shutil.rmtree(entry)\n                removed += 1\n                print(f\"Removed {str(entry)!r} (age: {age:.1f} days)\")\n        except OSError as exc:\n            errors += 1\n            print(f\"ERROR: {str(entry)!r}: {exc}\", file=sys.stderr)\n\n    if args.dry_run:\n        print(f\"Dry run complete: {matched} would be removed; {errors} errors.\")\n    else:\n        print(f\"Complete: {removed}/{matched} removed; {errors} errors.\")\n    return 1 if errors else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n```\n\nPreview first, then execute:\n\n```bash\npython3 prune_cache.py /path/to/cache --days 30 --dry-run\npython3 prune_cache.py /path/to/cache --days 30\n```\n\nDry run performs no writes. Deletion errors produce exit status `1`; invalid arguments produce `2`. A failed deletion can leave a partially removed directory.\n\nThe workspace is read-only, so I couldn’t save the script. Runtime checks were not run.",
+        "durationMs": 28254,
+        "usage": {
+          "input_tokens": 63717,
+          "cached_input_tokens": 55936,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1195,
+          "reasoning_output_tokens": 126
+        },
+        "sentPromptSha256": "fff93e985095749b52b0748bad7ebb0fd3bef7066dff676a190bf51d1867ee0c",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "guarded deletion",
+              "pass": true
+            },
+            {
+              "criterion": "dry-run branch",
+              "pass": true
+            },
+            {
+              "criterion": "operator feedback",
+              "pass": true
+            },
+            {
+              "criterion": "input validation",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      }
+    },
+    {
+      "id": "pure_core_imperative_shell",
+      "prompt": "We need an order total calculation module that applies tier discounts, promotion coupons, and sales tax. Show how to structure this cleanly in TypeScript/JavaScript for maximum maintainability and testability.",
+      "promptSha256": "087be0f04aac0ccf12881267f5d02e7b859aa5752a546cc91686ae4cde0045eb",
+      "baseline": {
+        "status": "completed",
+        "output": "Use a **pure calculation core with a thin I/O shell**:\n\n- The core receives prices, discount rules, a resolved coupon, and a tax rate. It returns an itemized breakdown.\n- The shell loads those inputs from databases or APIs and saves the result.\n- Tests call the core directly, without mocks.\n\nMake the business rules explicit. This example assumes:\n\n- All amounts use one currency and integer cents.\n- The highest qualifying tier applies, based on the original subtotal.\n- One coupon applies after the tier discount.\n- Discounts cannot reduce the balance below zero.\n- Tax applies to the discounted balance; each percentage calculation rounds half up.\n\nThese are example policies; change them to match your requirements.\n\n```ts\n// order-total.ts\ntype Tier = Readonly<{\n  minimumCents: bigint;\n  discountBps: bigint; // 1,000 basis points = 10%\n}>;\n\ntype Coupon =\n  | Readonly<{ kind: \"fixed\"; amountCents: bigint }>\n  | Readonly<{ kind: \"percent\"; discountBps: bigint }>;\n\ntype Input = Readonly<{\n  lines: readonly Readonly<{\n    unitPriceCents: bigint;\n    quantity: bigint;\n  }>[];\n  tiers: readonly Tier[];\n  coupon?: Coupon;\n  taxBps: bigint;\n}>;\n\nfunction nonNegative(value: bigint): void {\n  if (value < 0n) throw new RangeError(\"Value must be non-negative\");\n}\n\nfunction validRate(bps: bigint): void {\n  if (bps < 0n || bps > 10_000n) {\n    throw new RangeError(\"Rate must be between 0 and 10,000 bps\");\n  }\n}\n\nfunction percentage(amount: bigint, bps: bigint): bigint {\n  // Exact integer arithmetic, rounded half up to the nearest cent.\n  return (amount * bps + 5_000n) / 10_000n;\n}\n\nexport function calculateTotal(input: Input) {\n  validRate(input.taxBps);\n\n  const subtotalCents = input.lines.reduce((sum, line) => {\n    nonNegative(line.unitPriceCents);\n    if (line.quantity <= 0n) {\n      throw new RangeError(\"Quantity must be positive\");\n    }\n    return sum + line.unitPriceCents * line.quantity;\n  }, 0n);\n\n  let tierBps = 0n;\n  let qualifyingMinimum = -1n;\n  const thresholds = new Set<bigint>();\n\n  for (const tier of input.tiers) {\n    nonNegative(tier.minimumCents);\n    validRate(tier.discountBps);\n    if (thresholds.has(tier.minimumCents)) {\n      throw new RangeError(\"Duplicate tier threshold\");\n    }\n    thresholds.add(tier.minimumCents);\n\n    if (\n      subtotalCents >= tier.minimumCents &&\n      tier.minimumCents > qualifyingMinimum\n    ) {\n      qualifyingMinimum = tier.minimumCents;\n      tierBps = tier.discountBps;\n    }\n  }\n\n  const tierDiscountCents = percentage(subtotalCents, tierBps);\n  const afterTierCents = subtotalCents - tierDiscountCents;\n\n  let couponDiscountCents = 0n;\n  if (input.coupon?.kind === \"fixed\") {\n    nonNegative(input.coupon.amountCents);\n    couponDiscountCents =\n      input.coupon.amountCents < afterTierCents\n        ? input.coupon.amountCents\n        : afterTierCents;\n  } else if (input.coupon?.kind === \"percent\") {\n    validRate(input.coupon.discountBps);\n    couponDiscountCents = percentage(\n      afterTierCents,\n      input.coupon.discountBps,\n    );\n  }\n\n  const taxableCents = afterTierCents - couponDiscountCents;\n  const taxCents = percentage(taxableCents, input.taxBps);\n\n  return {\n    subtotalCents,\n    tierDiscountCents,\n    couponDiscountCents,\n    taxableCents,\n    taxCents,\n    totalCents: taxableCents + taxCents,\n  };\n}\n```\n\n`bigint` keeps arithmetic exact, including percentage intermediates. Use an ES2020-or-later target. At JSON boundaries, serialize monetary values as decimal strings and validate incoming data before constructing these types.\n\nKeep orchestration outside this module:\n\n```ts\n// checkout.ts — illustrative application wiring\nasync function quoteOrder(orderId: string, couponCode?: string) {\n  const order = await orders.load(orderId);\n\n  const [tiers, coupon, taxBps] = await Promise.all([\n    discounts.loadTiers(),\n    coupons.resolveEligible(couponCode, order),\n    taxes.resolveRate(order),\n  ]);\n\n  return calculateTotal({\n    lines: order.lines,\n    tiers,\n    coupon,\n    taxBps,\n  });\n}\n```\n\nCoupon expiry, eligibility, and usage checks belong in coupon resolution. Pass time explicitly into any eligibility calculation that depends on it. Enforce redemption limits transactionally when placing the order.\n\nTests can assert the complete breakdown:\n\n```ts\nimport assert from \"node:assert/strict\";\nimport { calculateTotal } from \"./order-total\";\n\nassert.deepEqual(\n  calculateTotal({\n    lines: [{ unitPriceCents: 10_000n, quantity: 1n }],\n    tiers: [{ minimumCents: 10_000n, discountBps: 1_000n }],\n    coupon: { kind: \"percent\", discountBps: 2_000n },\n    taxBps: 825n,\n  }),\n  {\n    subtotalCents: 10_000n,\n    tierDiscountCents: 1_000n,\n    couponDiscountCents: 1_800n,\n    taxableCents: 7_200n,\n    taxCents: 594n,\n    totalCents: 7_794n,\n  },\n);\n```\n\nAlso cover exact tier boundaries, unsorted tiers, oversized fixed coupons, half-cent rounding, empty orders, and invalid inputs. The example test is illustrative and has not been run here.\n\nKeep the calculation as one readable sequence initially. Extract separate policies when actual requirements—such as line-specific tax or coupon exclusions—need them; a generic rules engine would add maintenance work at this stage.",
+        "durationMs": 33361,
+        "usage": {
+          "input_tokens": 41398,
+          "cached_input_tokens": 29824,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1692,
+          "reasoning_output_tokens": 128
+        },
+        "sentPromptSha256": "087be0f04aac0ccf12881267f5d02e7b859aa5752a546cc91686ae4cde0045eb",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "calculation separated from I/O",
+              "pass": true
+            },
+            {
+              "criterion": "isolated testing example",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Use a **pure pricing function** surrounded by a thin I/O layer. The function receives resolved prices, discounts, and tax rates; it returns an itemized result without reading databases, accessing clocks, or mutating inputs.\n\nFor this example, the rules are explicit:\n\n- Select the highest tier whose threshold meets the original subtotal.\n- Apply the tier discount, then one coupon.\n- Cap fixed coupons at the remaining subtotal.\n- Calculate tax afterward, rounding each percentage calculation half up.\n\nThese are example business rules; adjust tax treatment and rounding to your actual requirements.\n\n```js\n// pricing.mjs\n// Money uses bigint minor units: 1000n means $10.00 for USD.\n// Rates use basis points: 825 means 8.25%.\n\nfunction validateMoney(value) {\n  if (typeof value !== \"bigint\" || value < 0n) {\n    throw new RangeError(\"Money must be a nonnegative bigint\");\n  }\n}\n\nfunction validateRate(value) {\n  if (!Number.isInteger(value) || value < 0 || value > 10_000) {\n    throw new RangeError(\"Rate must be an integer from 0 to 10000\");\n  }\n}\n\nfunction percentage(amount, bps) {\n  return (amount * BigInt(bps) + 5_000n) / 10_000n;\n}\n\nexport function calculateTotal({\n  subtotal,\n  tiers = [],\n  coupon = null,\n  taxBps,\n}) {\n  validateMoney(subtotal);\n  validateRate(taxBps);\n\n  let tier = null;\n  const thresholds = new Set();\n\n  for (const candidate of tiers) {\n    validateMoney(candidate.minimum);\n    validateRate(candidate.discountBps);\n\n    if (thresholds.has(candidate.minimum)) {\n      throw new RangeError(\"Duplicate tier threshold\");\n    }\n    thresholds.add(candidate.minimum);\n\n    if (\n      candidate.minimum <= subtotal &&\n      (!tier || candidate.minimum > tier.minimum)\n    ) {\n      tier = candidate;\n    }\n  }\n\n  const tierDiscount = percentage(subtotal, tier?.discountBps ?? 0);\n  const afterTier = subtotal - tierDiscount;\n  let couponDiscount = 0n;\n\n  if (coupon !== null) {\n    switch (coupon.kind) {\n      case \"percent\":\n        validateRate(coupon.bps);\n        couponDiscount = percentage(afterTier, coupon.bps);\n        break;\n\n      case \"fixed\":\n        validateMoney(coupon.amount);\n        couponDiscount =\n          coupon.amount > afterTier ? afterTier : coupon.amount;\n        break;\n\n      default:\n        throw new TypeError(\"Unknown coupon kind\");\n    }\n  }\n\n  const taxableSubtotal = afterTier - couponDiscount;\n  const tax = percentage(taxableSubtotal, taxBps);\n\n  return {\n    subtotal,\n    tierDiscount,\n    couponDiscount,\n    taxableSubtotal,\n    tax,\n    total: taxableSubtotal + tax,\n  };\n}\n```\n\nIn TypeScript, model the coupon as a union so mutually exclusive states are clear:\n\n```ts\ntype Coupon =\n  | { readonly kind: \"percent\"; readonly bps: number }\n  | { readonly kind: \"fixed\"; readonly amount: bigint };\n\ntype Tier = {\n  readonly minimum: bigint;\n  readonly discountBps: number;\n};\n\ntype PricingInput = {\n  readonly subtotal: bigint;\n  readonly tiers?: readonly Tier[];\n  readonly coupon?: Coupon | null;\n  readonly taxBps: number;\n};\n```\n\nKeep external work in the caller: load authoritative product prices, resolve the coupon, check its expiration and eligibility, obtain applicable tax information, then call `calculateTotal`. Pass time explicitly to eligibility checks if they need it. Usage-limited coupon redemption belongs in the persistence transaction so concurrent orders cannot redeem it twice.\n\nTests call the calculator directly, without mocks:\n\n```js\n// pricing.test.mjs — run: node --test pricing.test.mjs\nimport test from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { calculateTotal } from \"./pricing.mjs\";\n\ntest(\"applies tier, coupon, then tax\", () => {\n  assert.deepEqual(\n    calculateTotal({\n      subtotal: 10_000n,\n      tiers: [\n        { minimum: 10_000n, discountBps: 1_000 },\n        { minimum: 5_000n, discountBps: 500 },\n      ],\n      coupon: { kind: \"percent\", bps: 2_000 },\n      taxBps: 825,\n    }),\n    {\n      subtotal: 10_000n,\n      tierDiscount: 1_000n,\n      couponDiscount: 1_800n,\n      taxableSubtotal: 7_200n,\n      tax: 594n,\n      total: 7_794n,\n    },\n  );\n});\n\ntest(\"caps a fixed coupon at the remaining subtotal\", () => {\n  const result = calculateTotal({\n    subtotal: 100n,\n    coupon: { kind: \"fixed\", amount: 200n },\n    taxBps: 825,\n  });\n  assert.equal(result.total, 0n);\n});\n\ntest(\"rounds half a minor unit upward\", () => {\n  assert.equal(\n    calculateTotal({ subtotal: 1n, taxBps: 5_000 }).tax,\n    1n,\n  );\n});\n\ntest(\"rejects negative amounts\", () => {\n  assert.throws(\n    () => calculateTotal({ subtotal: -1n, taxBps: 0 }),\n    RangeError,\n  );\n});\n```\n\nThis keeps policy visible in one place and isolates infrastructure failures from arithmetic tests. Use one currency per calculation; convert `bigint` amounts to decimal strings at JSON boundaries.\n\nI ran nine assertions against the calculation logic successfully, covering stacking order, tier boundaries, coupon capping, rounding, and rejected inputs. No project files were changed.",
+        "durationMs": 64796,
+        "usage": {
+          "input_tokens": 120572,
+          "cached_input_tokens": 94080,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3545,
+          "reasoning_output_tokens": 312
+        },
+        "sentPromptSha256": "6921e43bd78cad80fea9ecd1967e28838682895cb4b0b290ea850dfa39cfab95",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Fails to separate pure calculation decisions from external I/O and mutable state.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Fails to separate pure calculation decisions from external I/O and mutable state."
+        }
+      }
+    },
+    {
+      "id": "rolling_migration",
+      "prompt": "In a PostgreSQL database serving a microservice deployed via zero-downtime rolling deployments, we need to rename the column `customer_name` to `full_name`. Explain the migration strategy and deployment steps.",
+      "promptSha256": "54639c65fa8795320c4dfbbf5fa573a8208b2d3f5d12dd4dbffbe57296d8b9d8",
+      "baseline": {
+        "status": "completed",
+        "output": "Use an **expand–migrate–contract** migration across several releases. A direct `RENAME COLUMN` would immediately break running instances that still query `customer_name`.\n\n1. **Expand the schema first.** Add nullable `full_name` with the same data type as `customer_name`. Keep the existing column and constraints intact. Run this as a controlled migration before deploying code that references it.\n\n2. **Deploy a compatibility release.** It should continue reading `customer_name` and write both columns atomically in the same transaction. During this rollout, older instances still write only `customer_name`, so do not switch reads yet.\n\n3. **Backfill after all old instances have drained.** Copy `customer_name` into `full_name` in small, resumable batches. Copy from the current database row rather than values previously fetched by a script, so concurrent writes cannot be overwritten with stale data. Verify equality using `IS DISTINCT FROM`, which handles nulls correctly. Account for background workers, scripts, and other writers too.\n\n4. **Deploy a release that reads `full_name` and still writes both.** First ensure the backfill is complete and any required constraints and indexes are in place. Keeping both columns updated preserves rollback to the compatibility release.\n\n5. **Deploy a release that uses only `full_name`.** Roll this out completely, drain older instances and jobs, and retain the old column for the agreed rollback window. Once writes to `customer_name` stop, older releases may see stale data; rollback then requires resynchronization.\n\n6. **Contract the schema in a later migration.** Remove `customer_name` after confirming no remaining consumers or dependencies need it. Avoid `CASCADE`, which could silently remove dependent objects.\n\n**Do not rely on application dual writes while old writers remain.** The ordering above avoids that gap by delaying the backfill and read switch until they are gone. If old-only writers must remain active longer, use a carefully designed database trigger to synchronize writes during the transition.\n\nPostgreSQL schema changes still acquire locks even when they are fast. Keep DDL transactions short, use a short `lock_timeout` and retry on contention, and monitor backfill load and replication lag. Zero-downtime deployment requires managing those locks as well as application compatibility. [PostgreSQL `ALTER TABLE` documentation](https://www.postgresql.org/docs/current/sql-altertable.html)",
+        "durationMs": 26759,
+        "usage": {
+          "input_tokens": 62129,
+          "cached_input_tokens": 49792,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 667,
+          "reasoning_output_tokens": 0
+        },
+        "sentPromptSha256": "54639c65fa8795320c4dfbbf5fa573a8208b2d3f5d12dd4dbffbe57296d8b9d8",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Must use an expand-and-contract migration strategy to ensure continuous schema compatibility.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Must use an expand-and-contract migration strategy to ensure continuous schema compatibility."
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "Use an **expand–migrate–contract** rollout. A direct `RENAME COLUMN` breaks old instances that still query `customer_name`.\n\n1. **Expand the schema before deploying application changes.** Add nullable `full_name` with the same type and collation as `customer_name`, initially without a default. Keep the original column and its constraints.\n\n2. **Deploy a compatibility release.** Continue reading `customer_name`, but write both columns atomically in the same SQL statement or transaction. Wait until all old instances and background workers have drained. During this rollout, old instances still write only `customer_name`, so `full_name` is not yet authoritative.\n\n3. **Backfill existing rows.** After every writer supports both columns, copy `customer_name` into `full_name` in small, resumable primary-key batches. Update mismatches using `IS DISTINCT FROM`, which handles nulls. Copy directly inside the database; avoid reading values into application memory and writing them back later, which can overwrite concurrent updates. Monitor locks, replication lag, and database load.\n\n4. **Verify, then switch reads.** Confirm there are no mismatches:\n   ```sql\n   SELECT count(*)\n   FROM customers\n   WHERE full_name IS DISTINCT FROM customer_name;\n   ```\n   Recreate any required indexes, constraints, or dependent objects on `full_name`. Deploy a release that reads `full_name` while continuing to write both columns. This preserves rollback to the compatibility release.\n\n5. **Retire the old column in later releases.** After the rollback window closes, deploy code that reads and writes only `full_name`. If `customer_name` has a `NOT NULL` constraint or other requirements that would reject these writes, relax them first. Once all instances, jobs, reports, and integrations have stopped referencing `customer_name`, drop it in a separate migration.\n\n**Operational safeguards:** Run versioned migrations once as controlled release operations, rather than at every instance’s startup. PostgreSQL schema changes can require exclusive table locks even when execution is quick; use short transactions, a bounded `lock_timeout`, and retry a failed migration later. [PostgreSQL ALTER TABLE documentation](https://www.postgresql.org/docs/current/sql-altertable.html)\n\nIf you cannot account for every writer, use a temporary database synchronization trigger with explicit conflict and null-handling rules instead of relying solely on application dual writes.\n\nBefore production, test mixed-version reads and writes, concurrent backfill, interrupted migration reruns, and rollback against PostgreSQL. No database was supplied, so these are deployment recommendations rather than verified execution results.",
+        "durationMs": 23332,
+        "usage": {
+          "input_tokens": 44493,
+          "cached_input_tokens": 31488,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 660,
+          "reasoning_output_tokens": 0
+        },
+        "sentPromptSha256": "ec58a318abada4324805e95fa4f45b531a80ffe3e05a38715c6e140739f6fec6",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "Fails to account for old and new application instances running concurrently during deployment.",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Fails to account for old and new application instances running concurrently during deployment."
+        }
+      }
+    },
+    {
+      "id": "serverless_adaptation_review",
+      "prompt": "Review the following code for an AWS Lambda service:\n\n```typescript\nimport { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';\n\nexport const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {\n  const body = JSON.parse(event.body || '{}');\n  const result = await processOrder(body);\n  return {\n    statusCode: 200,\n    body: JSON.stringify(result),\n  };\n};\n```\n\nA reviewer claimed: 'Defect: Violates 12-Factor Factor 7 (Port Binding) because it does not bind an HTTP port with app.listen(). Must convert to Express.'\n\nProvide your review verdict on this claim and the code.",
+      "promptSha256": "03e591f7a48e96e6e9d9ab91f3fb9baa91e3f4b6513b9ee8371f39a1e2b4a395",
+      "baseline": {
+        "status": "completed",
+        "output": "**Reject the reviewer’s claim.** Factor VII describes port binding for self-hosted services. In Lambda, the applicable contract is an exported handler: API Gateway receives HTTP requests and invokes Lambda with an event. Adding `app.listen()` is unnecessary, and converting to Express is not required. This is a platform adaptation of the principle, rather than literal port-binding compliance. See [Factor VII](https://12factor.net/port-binding) and [AWS’s handler contract](https://docs.aws.amazon.com/lambda/latest/dg/typescript-handler.html).\n\nThe handler’s basic structure is appropriate for API Gateway proxy integration, but review these actual concerns:\n\n- **Malformed JSON:** `JSON.parse` can throw, producing an uncontrolled invocation failure. Catch parse errors and return `400`.\n- **Input validation:** Parsed JSON can be `null`, an array, or an invalid order. Validate the order before processing, unless `processOrder` already does so. Defaulting missing input to `{}` does not validate it.\n- **Error responses:** A rejected `processOrder` call escapes the handler. Map expected business failures to suitable HTTP responses and log unexpected failures without exposing sensitive data.\n- **Conditional concerns:** Decode the body first if `event.isBase64Encoded` is true. Verify idempotency if repeated order submissions can duplicate effects.\n- **Small improvement:** Explicitly return `Content-Type: application/json`.\n\nAssuming `processOrder` is defined or imported elsewhere, there is no demonstrated architectural defect here. The useful fixes concern validation and failure handling, consistent with [API Gateway’s proxy contract](https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html).",
+        "durationMs": 23433,
+        "usage": {
+          "input_tokens": 63112,
+          "cached_input_tokens": 50432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 624,
+          "reasoning_output_tokens": 0
+        },
+        "sentPromptSha256": "03e591f7a48e96e6e9d9ab91f3fb9baa91e3f4b6513b9ee8371f39a1e2b4a395",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "reject dogmatic port claim",
+              "pass": true
+            },
+            {
+              "criterion": "identify concrete defect",
+              "pass": true
+            },
+            {
+              "criterion": "location, consequence, and fix",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Missing heuristic evidence: location, consequence, and fix"
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "**Reject the reviewer’s claim.** Factor 7 explicitly adapts to managed functions: verify the platform’s handler and invocation contract. API Gateway handles HTTP and invokes Lambda; this handler should return the proxy response. Adding `app.listen()` or converting to Express is unnecessary. The success response follows the expected structure, assuming the configured integration uses the matching event format. [AWS invocation contract](https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway.html)\n\nThe code still merits these findings:\n\n- **Demonstrated: `JSON.parse(...)` → malformed JSON rejects the invocation → catch parsing errors and return an actionable `400`.** Keep that catch separate from processing failures.\n- **Conditional: `processOrder(body)` → arbitrary JSON reaches order processing without visible validation → verify validation occurs before side effects.** If absent, validate required fields, types, and constraints. TypeScript types do not validate request data.\n- **Conditional: rejected `processOrder` calls → no application error response → map expected business failures to appropriate statuses and unexpected failures to a sanitized server error.** Unhandled Lambda errors become gateway errors under proxy integration. [AWS error handling](https://docs.aws.amazon.com/apigateway/latest/developerguide/handle-errors-in-lambda-integration.html)\n- **Conditional: integration and order effects → verify base64 body handling, authentication/authorization, and durable idempotency for repeated submissions.** These may already be handled by configuration or `processOrder`; their omission from this snippet alone does not establish defects.\n\nKeep the Lambda handler. Verify malformed and invalid requests, processing failures, and duplicate submissions with focused tests. This is a snippet review; no tests or deployment configuration were available to verify.",
+        "durationMs": 21801,
+        "usage": {
+          "input_tokens": 45490,
+          "cached_input_tokens": 31616,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 509,
+          "reasoning_output_tokens": 0
+        },
+        "sentPromptSha256": "a0881fa60c1e6420ab23243c40800046f47345d6d04d26ef0242d245989a6492",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "reject dogmatic port claim",
+              "pass": true
+            },
+            {
+              "criterion": "identify concrete defect",
+              "pass": true
+            },
+            {
+              "criterion": "location, consequence, and fix",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Missing heuristic evidence: location, consequence, and fix"
+        }
+      }
+    },
+    {
+      "id": "convention_over_configuration",
+      "prompt": "We are adding a new REST endpoint for `GET /api/v1/projects/:id` in a modern convention-based framework (like Next.js App Router, NestJS, or Rails). A developer proposed creating a custom dynamic reflection router and a centralized route XML/JSON registry to manually wire up handlers. What is your assessment and recommended approach?",
+      "promptSha256": "dafdc72331ce84b0718f2bc889c21165bd3011f2d442a53ae0824172fb936acb",
+      "baseline": {
+        "status": "completed",
+        "output": "I would reject the custom router and registry for this endpoint. They duplicate framework capabilities and introduce extra configuration, runtime indirection, and opportunities for route definitions to drift from handlers.\n\nApply **convention over configuration**: use the framework’s standard routing mechanism and follow the project’s existing patterns. For example:\n\n- **Next.js App Router:** add `app/api/v1/projects/[id]/route.ts` with an exported `GET` handler. The directory structure defines the route. [Next.js documentation](https://nextjs.org/docs/app/api-reference/file-conventions/route)\n- **Rails:** declare `resources :projects, only: [:show]` inside `api` and `v1` namespaces, implemented by `Api::V1::ProjectsController#show`. Rails’ native `config/routes.rb` is appropriate; an additional XML/JSON registry adds no value here. [Rails routing guide](https://guides.rubyonrails.org/routing.html)\n\nKeep the handler focused: validate the ID, apply authentication and project authorization, load the project through existing application code, and return the expected JSON or error response. Verify successful retrieval, missing projects, invalid IDs, and denied access.\n\nCustom routing becomes reasonable only when a demonstrated requirement—such as routes supplied by runtime plugins—exceeds the framework’s supported extension points. A normal resource lookup does not justify it.",
+        "durationMs": 19461,
+        "usage": {
+          "input_tokens": 64296,
+          "cached_input_tokens": 54144,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 599,
+          "reasoning_output_tokens": 22
+        },
+        "sentPromptSha256": "dafdc72331ce84b0718f2bc889c21165bd3011f2d442a53ae0824172fb936acb",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "established framework convention",
+              "pass": true
+            },
+            {
+              "criterion": "exceptions or wiring cost explained",
+              "pass": false
+            }
+          ],
+          "pass": false,
+          "score": 0,
+          "reason": "Missing heuristic evidence: exceptions or wiring cost explained"
+        }
+      },
+      "skill": {
+        "status": "completed",
+        "output": "The proposed reflection router and centralized XML/JSON registry add unnecessary complexity for this endpoint. They duplicate the framework’s routing system, introduce another source of truth, and make developers understand custom discovery and wiring before they can trace a request.\n\nApply **convention over configuration**: use the framework’s established route placement and declarations. For example:\n\n- **Next.js App Router:** `app/api/v1/projects/[id]/route.ts` exporting `GET`.\n- **NestJS:** a controller with `@Controller('api/v1/projects')` and `@Get(':id')`, registered through the normal module system.\n- **Rails:** a route in `config/routes.rb` pointing to `Api::V1::ProjectsController#show`.\n\nKeep the handler focused: validate the ID, apply authentication and project-level authorization, load the project through existing application code, and return the established response format and error statuses.\n\nVerify routing and behavior with focused request tests covering a successful lookup, invalid ID, missing project, and unauthorized access. Follow the application’s policy for whether inaccessible projects return `403` or `404`.\n\nCustom routing would need a demonstrated requirement—such as routes supplied dynamically by plugins—that the framework cannot reasonably support. For this single endpoint, native conventions provide clearer discovery, less maintenance, and easier integration with framework tooling.",
+        "durationMs": 10662,
+        "usage": {
+          "input_tokens": 19286,
+          "cached_input_tokens": 12288,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 269,
+          "reasoning_output_tokens": 0
+        },
+        "sentPromptSha256": "6589021f155283fb45f6f853d36262b667811ae480e3e20637d6009e9638fbe7",
+        "grade": {
+          "method": "heuristic",
+          "checks": [
+            {
+              "criterion": "established framework convention",
+              "pass": true
+            },
+            {
+              "criterion": "exceptions or wiring cost explained",
+              "pass": true
+            }
+          ],
+          "pass": true,
+          "score": 1,
+          "reason": "All heuristic text checks passed; semantic review or execution is still required."
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "pairedCompleted": 10,
+    "executionErrors": 0,
+    "baselineScore": 4,
+    "skillScore": 3,
+    "deltaPercentagePoints": -10
+  },
+  "completedAt": "2026-10-30T19:19:45.777Z"
+}

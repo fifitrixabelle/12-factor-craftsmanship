@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="376" viewBox="0 0 1280 376" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">12 Factor Craftsmanship</title>
+  <desc id="desc">Practical engineering judgment for coding agents. Scope the change, build with care, verify the outcome.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1280" y2="376" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#101E28"/>
+      <stop offset="1" stop-color="#1E3438"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" stroke="#F3F0E6" stroke-opacity=".035"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="376" rx="20" fill="url(#background)"/>
+  <rect width="1280" height="376" rx="20" fill="url(#grid)"/>
+  <rect x="52" y="43" width="8" height="8" rx="2" fill="#F7A36B"/>
+  <text x="74" y="52" fill="#BFD0CC" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2.5">ENGINEERING WITH JUDGMENT</text>
+  <text x="49" y="145" fill="#F3F0E6" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="700" letter-spacing="-3">12 Factor</text>
+  <text x="49" y="227" fill="#F3F0E6" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="700" letter-spacing="-3">Craftsmanship<tspan fill="#F7A36B">.</tspan></text>
+  <text x="53" y="271" fill="#BFD0CC" font-family="Arial, Helvetica, sans-serif" font-size="18">Lessons learnt the hard way. Practical checks for coding agents.</text>
+  <path d="M54 310H1226" stroke="#F3F0E6" stroke-opacity=".14"/>
+  <text x="54" y="341" fill="#92ADA7" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="2">ONE SKILL</text>
+  <circle cx="155" cy="337" r="2" fill="#F7A36B"/>
+  <text x="174" y="341" fill="#92ADA7" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="2">ANY STACK</text>
+  <circle cx="285" cy="337" r="2" fill="#F7A36B"/>
+  <text x="304" y="341" fill="#92ADA7" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="2">CONTEXT BEFORE DOGMA</text>
+  <path d="M925 102V242" stroke="#F7A36B" stroke-opacity=".4" stroke-dasharray="3 6"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="877" y="62" width="349" height="62" rx="10" fill="#101E28" fill-opacity=".6" stroke="#91B4AA" stroke-opacity=".25"/>
+    <text x="904" y="100" fill="#F7A36B" font-size="13" font-weight="700">01</text>
+    <text x="956" y="101" fill="#E4E9DF" font-size="20" font-weight="700">Scope the change</text>
+    <rect x="877" y="140" width="349" height="62" rx="10" fill="#101E28" fill-opacity=".6" stroke="#91B4AA" stroke-opacity=".25"/>
+    <text x="904" y="178" fill="#F7A36B" font-size="13" font-weight="700">02</text>
+    <text x="956" y="179" fill="#E4E9DF" font-size="20" font-weight="700">Build with care</text>
+    <rect x="877" y="218" width="349" height="62" rx="10" fill="#F7A36B"/>
+    <text x="904" y="256" fill="#263536" font-size="13" font-weight="700">03</text>
+    <text x="956" y="257" fill="#101E28" font-size="20" font-weight="700">Verify the outcome</text>
+  </g>
+  <text x="1226" y="341" text-anchor="end" fill="#92ADA7" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.5">12 FACTORS + CONVENTION</text>
+</svg>

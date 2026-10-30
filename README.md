@@ -1,12 +1,40 @@
-# 12 Factor Craftsmanship
+<p align="center">
+  <img src="docs/assets/readme-banner.svg" alt="12 Factor Craftsmanship — scope the change, build with care, verify the outcome" width="1280">
+</p>
 
-**Lessons learnt the hard way, turned into practical checks for coding agents.**
+<p align="center">
+  <a href="https://github.com/fifitrixabelle/12-factor-craftsmanship/actions/workflows/checks.yml"><img src="https://github.com/fifitrixabelle/12-factor-craftsmanship/actions/workflows/checks.yml/badge.svg" alt="Checks"></a>
+  <a href="skills/12-factor-craftsmanship/SKILL.md"><img src="https://img.shields.io/badge/Agent_Skills-SKILL.md-2b5b52?style=flat-square" alt="Agent Skills format"></a>
+  <a href="mise.toml"><img src="https://img.shields.io/badge/runtime-managed_with_mise-344955?style=flat-square" alt="Runtime managed with mise"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-dc925d?style=flat-square" alt="MIT license"></a>
+</p>
 
-Wrong abstractions make every change harder. Hidden wiring makes behavior difficult to trace. Unsafe retries repeat side effects. Unchecked defaults change behavior across deployments. This skill turns those failure patterns into actions agents can take before delivering a change.
+<p align="center">
+  <strong>Practical engineering judgment for coding agents.</strong><br>
+  One portable skill for maintainable code, predictable interfaces, and reliable service operation.
+</p>
 
-It mixes ideas from Twelve-Factor, Software Craftsmanship, Perl, Rails, typed functional programming, Eiffel, Clojure, Go, Erlang/OTP, and htmx. Borrow the techniques that fit the task, verify the outcome, and revise the approach when the evidence changes. No particular language or stack is required.
+<p align="center">
+  <a href="#install">Install</a> · <a href="#use">Use</a> · <a href="#principles-and-sources">Principles</a> · <a href="#evaluation-and-benchmark-wip">Evaluation</a> · <a href="#development">Development</a>
+</p>
 
-It also draws on first-hand experience delivering and operating production applications across a wide range of environments, stacks, and constraints. Some citations are decades old; the problems they help address still turn up in production. The checks bring those ideas together with lessons from delivery, maintenance, and failure recovery, and adapt them to the environment at hand.
+---
+
+Wrong abstractions make every change harder. Unsafe retries repeat side effects.
+Hidden wiring makes behavior difficult to trace. This skill turns those lessons
+into checks an agent can apply before delivering a change.
+
+| Build software that is… | What the skill asks agents to do |
+| --- | --- |
+| **Maintainable** | Separate responsibilities, model valid states, and share rules that should change together. |
+| **Predictable** | Make common operations easy, keep side effects clear, and make dry runs safe. |
+| **Reliable** | Bound retries, preserve idempotency, handle shutdown, and keep releases compatible. |
+| **Evidence-based** | Verify outcomes and distinguish demonstrated defects, conditional risks, and optional improvements. |
+
+**Any language. Any stack. Context first.** The skill combines production experience
+with Twelve-Factor, Software Craftsmanship, Perl, Rails, and ideas from typed
+functional programming, Eiffel, Clojure, Go, Erlang/OTP, and htmx. Apply what fits,
+verify the outcome, and revise the approach when the evidence changes.
 
 ## Install
 
@@ -17,6 +45,9 @@ Inside Claude Code, run:
 ```
 /plugin install 12-factor-craftsmanship --marketplace fifitrixabelle/12-factor-craftsmanship
 ```
+
+<details>
+<summary>Older Claude Code versions and plugin updates</summary>
 
 On Claude Code versions before 2.1.275, add the marketplace first:
 
@@ -34,6 +65,8 @@ claude plugin update 12-factor-craftsmanship@12-factor-craftsmanship
 ```
 
 Then run `/reload-plugins` inside an existing Claude Code session, or start a new session. Refreshing the marketplace listing alone does not update the loaded plugin.
+
+</details>
 
 ### Cursor Agent
 
@@ -102,6 +135,9 @@ We cite David Heinemeier Hansson (DHH) solely for convention over configuration.
 
 This bibliography covers the ideas incorporated into the skill, including the foundations linked above. The practical instructions are this project's adaptations; the sources do not prescribe or endorse the whole combined skill.
 
+<details>
+<summary><strong>Explore the full bibliography and attribution</strong></summary>
+
 ### Service operation and craftsmanship
 
 | Source and attribution | Ideas used in the skill |
@@ -138,16 +174,47 @@ This bibliography covers the ideas incorporated into the skill, including the fo
 
 The selection, ordering, verification/reporting format, and advice to use the right tool for the right job are editorial synthesis. Runtime-specific adaptations—such as mounted configuration, managed-function handlers, and platform telemetry—must be checked against the target platform's documentation when applied.
 
+</details>
+
 ## Evaluation and benchmark (WIP)
 
-The repository includes a work-in-progress evaluation suite measuring whether models apply operational resilience, safe retries, variant modeling, and review discipline across 10 core capability probes. Initial empirical testing against `gpt-6.1-sol` shows a +20% net improvement over baseline (40% → 60%).
+The repository includes a work-in-progress evaluation suite covering operational resilience, safe retries, variant modeling, and review discipline across 10 probes. Its text graders are heuristics, with executable checks for the payment fixture. They do not prove that generated code is safe.
+
+The earlier 40% → 60% result is withdrawn as evidence of improvement: the original runner corrupted prompts through shell substitution, counted execution timeouts as answer failures, and used incomplete graders. The historical record is retained for transparency. A clean, repeated, independently reviewed benchmark is still needed.
 
 ```bash
-npm test        # run grader unit tests (Node built-in test runner, zero dependencies)
-npm run eval    # run benchmark scorecard comparing baseline vs skill
+mise run test       # regression, fixture, CLI, and repository consistency checks
+mise run fixtures   # hand-authored fixture self-check; no model calls
 ```
 
 See [`eval/README.md`](eval/README.md) for probe definitions, rubrics, promptfoo benchmarking configuration, and the evaluation roadmap.
+
+Live evaluations are separate, require configured model access, and incur provider costs.
+
+## Development
+
+[mise](https://mise.jdx.dev/) manages the runtime for local development and CI.
+The repository pins **Node.js 24.22.2** in [`mise.toml`](mise.toml); no npm dependency
+installation is needed for the local checks.
+
+```bash
+mise trust
+mise install
+mise run check
+```
+
+| Command | Runs |
+| --- | --- |
+| `mise run check` | All local tests and fixture checks; no model calls. |
+| `mise run test` | Regression and repository consistency tests. |
+| `mise run fixtures --markdown` | A Markdown report of the hand-authored fixtures. |
+| `mise run eval --input completions.json --markdown` | Heuristic grading of saved model answers. |
+| `mise run benchmark --model gpt-6.1-sol` | Twenty live Codex sessions; requires model access and incurs provider costs. |
+| `mise run plugin:validate` | Strict plugin validation; requires the Claude Code CLI. |
+
+Run `mise tasks` to list the available tasks. The existing npm scripts also work
+inside `mise exec -- …` or a shell with mise activated. CI uses the same tool
+configuration and runs `mise run check`. The package requires Node.js 24 or newer.
 
 ## Releases
 
