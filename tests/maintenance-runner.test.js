@@ -24,7 +24,7 @@ test('valid library control rejects invented defect findings and requires semant
   assert.equal(gradeReview(c, JSON.stringify({ ...response, findings: ['Must bind a port'] })).pass, false);
 });
 
-test('runner materializes existing files and protects unrequested caller changes', () => {
+test('runner protects callers and rejects unauthorized additions', () => {
   const { prepareCase, snapshot, checkScope } = require('../eval/cases/run');
   const c = cases.find(c => c.id === 'payment_retry');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-runner-'));
@@ -34,6 +34,11 @@ test('runner materializes existing files and protects unrequested caller changes
     assert.ok(before['checkout.cjs']);
     fs.writeFileSync(path.join(root, 'payment.cjs'), '// repaired');
     assert.deepEqual(checkScope(c, before, snapshot(root)), []);
+    fs.writeFileSync(path.join(root, 'helper.cjs'), '// unrequested');
+    fs.writeFileSync(path.join(root, 'package.json'), '{"dependencies":{"extra":"1"}}');
+    assert.deepEqual(checkScope(c, before, snapshot(root)).sort(), ['helper.cjs', 'package.json']);
+    fs.rmSync(path.join(root, 'helper.cjs'));
+    fs.rmSync(path.join(root, 'package.json'));
     fs.writeFileSync(path.join(root, 'checkout.cjs'), '// shortcut');
     assert.deepEqual(checkScope(c, before, snapshot(root)), ['checkout.cjs']);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -53,7 +58,7 @@ console.log('TAP version 13\\n# tests 0\\n# pass 0\\n# fail 0');
     const grade = gradeRepair(c, root, { executable });
     assert.equal(grade.status, 'completed');
     assert.equal(grade.pass, false, 'zero executed tests cannot pass a repair task');
-    assert.equal(grade.expectedTests, 4);
+    assert.equal(grade.expectedTests, 5);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 

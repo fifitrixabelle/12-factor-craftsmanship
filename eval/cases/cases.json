@@ -26,7 +26,7 @@
     "id": "payment_retry",
     "kind": "repair",
     "title": "Repair duplicate charges and nested retry amplification",
-    "testCount": 4,
+    "testCount": 5,
     "editable": [
       "payment.cjs"
     ],
@@ -34,18 +34,19 @@
       "kind": "repo-regression",
       "description": "Combines the retry-exhaustion/permanent-error defects found in this repository's original payment fixture (2e74586) with a constructed SDK retry layer and checkout caller."
     },
-    "task": "Fix payment.cjs. Checkout incidents report duplicate charges after an uncertain gateway response, repeated permanent declines, and too many gateway requests during outages. The gateway SDK accepts charge(amount, {idempotencyKey, maxAttempts}); it retries transient failures internally up to maxAttempts (default 2). Error.status is the HTTP status; Error.code can be ETIMEDOUT or ECONNRESET. Preserve checkout.cjs and the pay(gateway, payment) API. payment.id identifies one durable logical payment and callers may invoke checkout again with that same ID.",
+    "task": "Fix payment.cjs. Checkout incidents report duplicate charges after an uncertain gateway response, repeated permanent declines, and too many gateway requests during outages. The gateway SDK accepts charge(amount, {idempotencyKey, maxAttempts}); it retries transient failures internally up to maxAttempts (default 2), with a 5 ms delay between internal retries. Error.status is the HTTP status; Error.code can be ETIMEDOUT or ECONNRESET. Preserve checkout.cjs and the pay(gateway, payment) API. payment.id identifies one durable logical payment and callers may invoke checkout again with that same ID.",
     "constraints": [
       "Only edit payment.cjs; no new dependencies.",
       "At most three underlying gateway attempts per pay call, including SDK retries.",
       "Retry transient failures only; preserve stable logical identity across retries and caller replays.",
-      "Successful responses and final errors must propagate; apply a bounded delay between retries."
+      "Successful responses and final errors must propagate. For this low-latency checkout, application-owned retry delays must be between 5 and 250 ms."
     ],
     "rubric": [
       "A committed-but-timed-out payment and a caller replay do not create a second charge.",
       "A permanent 400 decline causes one underlying attempt.",
       "A persistent transient outage exhausts at most three attempts and rejects.",
-      "Unclassified failures propagate without automatic retries."
+      "Unclassified failures propagate without automatic retries.",
+      "Transient retries have a positive bounded delay, including when the application owns the retry loop."
     ]
   },
   {

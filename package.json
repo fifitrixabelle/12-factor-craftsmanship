@@ -7,8 +7,10 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "eval": "node eval/run.js",
-    "eval:fixtures": "node eval/run.js --fixtures",
-    "eval:live": "node eval/gather-proof.js"
+    "eval:fixtures": "node eval/cases/run.js --fixtures",
+    "eval:fixtures:legacy": "node eval/run.js --fixtures",
+    "eval:live": "node eval/cases/run.js",
+    "eval:live:legacy": "node eval/gather-proof.js"
   },
   "keywords": [
     "twelve-factor",

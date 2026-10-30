@@ -1,137 +1,157 @@
 # Evaluation (work in progress)
 
-This suite covers ten craftsmanship capabilities: retry/idempotency, state variants,
-independent domain rules, shutdown, config/logging, dry-run behavior, pure calculations,
-rolling migrations, serverless review, and framework conventions.
+The primary benchmark is `maintenance-v1`: seven small tasks with existing project
+files, public callers, constraints, and explicit acceptance criteria. It exercises
+changes to existing code and contextual judgment. The original ten prose probes
+remain available as **legacy diagnostics**; their regex scores are not the primary
+measure of quality.
 
-## What the checks establish
+## Maintenance cases
 
-`graders.js` uses heuristic text patterns. It reports a binary score, a reason, and
-criterion checks. Some detected anti-patterns fail immediately. Passing means the
-expected text signals were found, not that code is correct or production-ready.
-Comments, alternative syntax, quoted examples, and naming differences can still
-cause false positives or false negatives. Review model answers against the full
-rubric in `probes.json` before drawing conclusions.
+| Case | Context and observable outcome | Provenance |
+| --- | --- | --- |
+| `prompt_transport` | Repair an existing subprocess wrapper. Preserve Markdown, quotes, newlines, argument boundaries, and failed-child behavior through its caller. | Repository regression: original `gather-proof.js` in `2e74586`. |
+| `payment_retry` | Repair checkout with a retrying gateway SDK. Simulate a charge committed before a timeout, caller replay, permanent declines, exhausted budgets, and unknown failures. | Repository payment-fixture defects, extended with a constructed SDK and caller. |
+| `worker_shutdown` | Repair a leased-message worker. Send real SIGTERM/SIGINT during work and polling; verify acknowledgement, intake closure, failed work, and a stalled-job deadline. | Constructed scenario. |
+| `dry_run` | Repair a cache CLI using real temporary directories, ages, files, and symlinks. Verify preview preservation, actual cleanup, invalid retention, and target validation. | Constructed scenario. |
+| `shared_policy` | Review an extraction where two callers deliberately implement one policy and must change together. | Constructed control. |
+| `independent_policy` | Review the same code and proposal with independently owned policies and a documented upcoming divergence. | Paired constructed control. |
+| `library_adaptation` | Review a small library with a valid mounted-token-file contract and no server or worker lifecycle. Avoid unsupported defect findings. | Constructed no-finding control. |
 
-`fixtures.js` contains hand-authored positive and negative examples. Comparing those
-examples tests the graders; it is not a baseline-versus-skill model benchmark.
-The payment fixture is also executed against a simulated gateway to check permanent
-HTTP failures, exhausted retries, transient failures, and stable idempotency keys.
-Only trusted repository fixtures are executed, never arbitrary model output.
+The source projects, reference repairs, acceptance tests, and rubrics are in
+[`cases/`](cases/). `cases.json` records the origin and construction of each case.
+The two policy controls deliberately have identical implementations and proposals;
+their policy documents change the appropriate decision.
 
-## Local checks
+These are **contextualized examples, not a mined sample of production incidents**.
+They cover selected failure modes, not all skill guidance. Missing coverage includes
+larger dependency graphs, framework-specific discovery, real database migrations,
+authorization, and multi-service incidents. Reference repairs illustrate one
+acceptable implementation; candidate repairs are checked by behavior rather than
+source equality.
 
-Use mise to install the Node.js version pinned in `mise.toml` (24.22.2).
-No npm dependencies or model credentials are needed for local checks.
+## Local corpus and regression checks
+
+Mise pins Node.js 24.22.2. No npm dependencies or model credentials are needed:
 
 ```bash
 mise trust
 mise install
 mise run check
-mise run fixtures --markdown
+mise run fixtures
 ```
 
-Tests cover grader counterexamples, fixture behavior, CLI validation, subprocess
-transport and failures, and consistency between plugin/package/skill metadata,
-probe IDs, fixtures, graders, and Promptfoo inputs. CI uses the same mise configuration and runs `mise run check`. This metadata check supplements the release-time
-`claude plugin validate --strict .` check; it does not replace that validator.
+The repair corpus contains sixteen acceptance tests. Each broken project must fail
+and its reference repair must pass. Review fixture checks verify categorical decision
+handling; they do not establish that a rationale is sound. CI uses the same mise
+configuration and runs `mise run check`.
 
-## Evaluate collected completions
+Trusted repository fixtures run directly under Node. Model-generated repairs use
+the native Codex sandbox instead. Native grading is also checked locally against
+the reference repairs; the normal CI suite uses a fake CLI for runner integration
+and does not require model access or a Codex installation.
 
-Supply either an array or an object keyed by probe ID:
+`mise run plugin:validate` runs `claude plugin validate --strict .` when the Claude
+Code CLI is installed. Repository metadata consistency tests supplement this
+release-time validator; they do not replace it.
 
-```json
-[
-  { "probe": "retry_idempotency", "output": "...answer..." },
-  { "probe": "state_variants", "output": "...answer..." }
-]
-```
+## Run the maintenance benchmark
 
-```bash
-mise run eval --input completions.json
-mise run eval --input completions.json --markdown
-```
-
-Unknown probes, duplicate IDs, invalid JSON, non-string answers, and invalid options
-are errors. Absent probes appear as `MISSING`, separately from failed answers.
-An empty string is a supplied answer that fails the relevant heuristic checks.
-The command exits nonzero for invalid input; a quality failure is reported in the
-scorecard rather than the exit code.
-
-## Collect paired answers with Codex
-
-Use an authenticated Codex CLI whose `exec --help` supports `--ignore-user-config`,
-`--ephemeral`, `--json`, and stdin prompts. Choose the model explicitly:
+Use an authenticated Codex CLI supporting `exec --ignore-user-config`, `--ephemeral`,
+stdin prompts, and native `codex sandbox` execution. Select the model explicitly:
 
 ```bash
 mise run benchmark --model YOUR_MODEL_ID
-# Optional: choose a new destination; existing files are rejected.
-mise run benchmark --model YOUR_MODEL_ID --output /tmp/new-run.json
+mise run benchmark --case payment_retry --model YOUR_MODEL_ID
+mise run benchmark --model YOUR_MODEL_ID --output /tmp/new-maintenance-run.json
 ```
 
-Each run starts twenty Codex CLI sessions and incurs provider costs; tool loops can
-make multiple model calls per session. Prompts are sent
-exactly over stdin using an argument-based subprocess; shell interpolation is never
-used. Each arm/probe gets an empty temporary working directory outside this repo.
-User config is ignored, sessions are ephemeral, and model tools use a read-only
-sandbox. Global skill discovery and provider defaults may still affect both arms:
-for a controlled comparison, use a dedicated account/environment with no installed
-skills or ambient instructions, and record its setup with the results.
+A full run starts fourteen CLI sessions; selecting one case starts two. Tool loops
+can make multiple model calls per session. These calls incur provider costs.
 
-Records include the requested model, CLI/Node versions, git revision and dirty state,
-SHA-256 hashes of the skill, probes, graders, runner, and sent prompts, reasoning
-effort, timeout, response time, raw answers, heuristic grades, and reported token usage.
-The requested model is not independently verified server routing. Usage is the
-reported completed turn, may be unavailable (`null`), and is not a guaranteed billing
-total. Wall time includes CLI startup and tool use. Provider prices are not inferred.
+Each arm gets a separate temporary project. Repair tasks allow workspace edits;
+review tasks use read-only workspaces. Both arms receive the same project, task,
+constraints, and rubric. The skill arm additionally receives `SKILL.md`. Arm order
+alternates across cases. User config is ignored and sessions are ephemeral, but
+global skills and provider defaults may still influence both arms. Use a dedicated
+environment without ambient instructions for controlled effect estimates.
 
-Each record gets a unique filename. A checkpoint is written after every completed
-pair. Execution failures have `status: execution_error`, `output: null`, and
-`grade: null`; they are counted separately and make the CLI exit nonzero. Only pairs
-where both arms completed enter the comparison denominator. An incomplete record
-has no `completedAt` field and must not be presented as a completed benchmark.
+Generated repair tests run through the native Codex sandbox with networking
+configured off, a minimal environment, a five-second Node test deadline, and a
+ten-second process deadline. The trusted acceptance files remain outside the
+candidate workspace. Original caller files are checked for unintended changes;
+reference-source equality is not required. Missing tests, changed protected files,
+invalid submissions, and failing acceptance checks cannot earn a repair pass.
+There is no automatic unsandboxed fallback for generated code. The native sandbox
+is checked before paid repair sessions start.
 
-## Promptfoo
+Review answers use JSON with `decision`, `rationale`, and `findings`. The categorical
+decision is checked directly; the valid-library control also requires no unsupported
+findings. **Rationale quality requires semantic review.** We do not search for
+particular phrases such as “pure function” or specific variable names.
 
-`promptfooconfig.js` derives tests directly from `probes.json`; prompts are not copied
-into a second configuration. Select an installed, pinned Promptfoo version and an
-explicit provider/model ID supported by that version:
+## Read the results
+
+The JSON record reports these groups separately:
+
+- `repairs`: paired completions and acceptance-test passes for each arm.
+- `reviewDecisions`: paired completions and correct decisions for each arm.
+- `executionErrors`: model collection failures, including timeouts.
+- `gradingErrors`: native sandbox or test-runner infrastructure failures.
+
+Only completed pairs without grading infrastructure errors enter their group's
+denominator. Invalid review JSON is a failed submission, not an infrastructure
+failure. Test-deadline exhaustion is a failed repair. There is no pooled quality
+score combining repair tests and review decisions.
+
+Records preserve prompts, original files, candidate source snapshots, test output,
+raw answers, reported usage, session times, model/CLI/Node versions, git revision and
+dirty state, skill/collector hashes, and per-file suite hashes. Snapshots are bounded
+to 100 files and 128 KiB per file; symbolic links are rejected as source artifacts.
+Execution and grading failures remain separate from ordinary test failures.
+
+Each run reserves a new filename and checkpoints after every arm. Completed runs
+have `completedAt`. Reported usage is the completed turn's CLI usage, not a guaranteed
+billing total; no monetary cost is inferred. One sample per case is diagnostic.
+Review rationales, inspect changes, repeat generations, and report uncertainty before
+claiming that the skill improves real work. Acceptance tests establish their tested
+contracts, not complete production safety or every qualitative rubric criterion.
+
+## Legacy text suite and historical records
+
+The original `probes.json`, `graders.js`, `fixtures.js`, and `promptfooconfig.js` remain
+available for historical comparisons and grader diagnostics:
+
+```bash
+mise run fixtures:legacy --markdown
+mise run eval --input completions.json --markdown
+mise run benchmark:legacy --model YOUR_MODEL_ID
+```
+
+The external text-grading input is an array of `{ "probe": "id", "output": "answer" }`
+objects or an object map from probe IDs to answer strings. Unknown/duplicate IDs and
+non-string answers are errors; omitted probes appear as `MISSING`.
+
+Legacy text graders use heuristic patterns and can reject equivalent correct answers.
+Their hand-authored positive/negative fixtures are grader checks, not sampled model
+baselines. The legacy Promptfoo config derives prompts from `probes.json`; use a
+pinned Promptfoo version and an explicit provider/model:
 
 ```bash
 export EVAL_PROVIDER='YOUR_PROVIDER_AND_MODEL_ID'
-# Set PROMPTFOO_VERSION to the exact version you have selected.
 npx "promptfoo@$PROMPTFOO_VERSION" eval -c eval/promptfooconfig.js
 ```
 
-Record the exact Promptfoo version, provider/model, skill revision, settings, and raw
-outputs with published results. The two arms compare a bare user prompt with the
-skill injected as a system prompt. The Codex collector injects the skill into its
-user prompt instead; do not pool those experiments as equivalent.
-See [Promptfoo configuration](https://www.promptfoo.dev/docs/configuration/guide/)
-for supported configuration and provider options.
-
-## Historical result: withdrawn as evidence of uplift
+Record the exact Promptfoo version and settings. Promptfoo injects the skill as a
+system prompt; the Codex collectors inject it into the user prompt. Do not pool
+those experiments as equivalent. See [Promptfoo configuration](https://www.promptfoo.dev/docs/configuration/guide/).
 
 [`results/live-proof-gpt-6.1-sol.json`](results/live-proof-gpt-6.1-sol.json) is preserved
-unchanged for transparency. Its stored 4/10 versus 6/10 scores do not establish an
-improvement. The original collector:
+unchanged. Its original 4/10 versus 6/10 result is withdrawn as evidence of uplift:
+the old collector corrupted prompts through shell substitution, counted execution
+failures as answer failures, and did not select the labeled model explicitly.
 
-- Embedded prompts in shell strings, executing backticks and removing task details.
-- Counted process timeouts as model-answer failures.
-- Labeled the model without explicitly selecting it and ran inside the repository.
-- Used graders that omitted checks and sometimes rejected equivalent correct wording.
-
-Do not recompute that record and call it a corrected benchmark: the original inputs
-were corrupted. Fresh paired generations and independent grading are required.
-
-## Next validation work
-
-- Repeat clean paired runs across selected models; report sample counts, execution
-  failures, uncertainty, and human-reviewed rubric scores.
-- Add held-out judgment cases: valid mounted config, shared code implementing one
-  policy, libraries that need no service infrastructure, and reviews with no defect.
-  Measure false findings as well as missed defects.
-- Compare completion time and token usage, including the cost of loading the skill.
-- Execute generated implementations in an isolated environment for shutdown,
-  dry-run filesystem preservation, retry replay, and schema compatibility.
-- Evaluate multi-turn work on real repositories before claiming practical uplift.
+The [corrected-collector diagnostic run](results/2026-10-30T19-10-44-432Z-gpt-6_1-sol-50243dce.md)
+completed all twenty sessions but exposed further text-grader false negatives. Those
+records do not establish a quality difference. Maintenance-v1 is a different corpus
+and measurement method; its scores must not be directly compared with either older run.

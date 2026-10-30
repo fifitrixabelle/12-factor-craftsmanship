@@ -31,7 +31,8 @@ function prepareCase(c, root, reference = false) {
 }
 
 function checkScope(c, before, after) {
-  return Object.keys(before).filter(file => !(c.editable || []).includes(file) && after[file] !== before[file]);
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter(file => !(c.editable || []).includes(file) && after[file] !== before[file]);
 }
 
 function promptFor(c) {
@@ -156,7 +157,7 @@ function main(args) {
   const options = {}; let fixtures = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--help') { console.log('Usage: mise run benchmark --model <id> [--case <id>] [--output <new.json>]\n       mise run benchmark:fixtures'); return; }
+    if (arg === '--help') { console.log('Usage: mise run benchmark --model <id> [--case <id>] [--output <new.json>]\n       mise run fixtures'); return; }
     if (arg === '--fixtures') { fixtures = true; continue; }
     if (!['--model', '--case', '--output'].includes(arg) || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`Invalid argument: ${arg}; use --help.`);
     options[arg.slice(2)] = args[++i];

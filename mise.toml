@@ -6,15 +6,23 @@ description = "Run regression and repository consistency tests"
 run = "npm test"
 
 [tasks.fixtures]
-description = "Report heuristic checks on hand-authored fixtures"
+description = "Check broken and reference maintenance projects without model calls"
+run = "node eval/cases/run.js --fixtures"
+
+[tasks."fixtures:legacy"]
+description = "Report the original hand-authored text fixtures"
 run = "node eval/run.js --fixtures"
 
 [tasks.eval]
-description = "Grade saved completions: mise run eval --input <file.json> [--markdown]"
+description = "Legacy text grading: mise run eval --input <file.json> [--markdown]"
 run = "node eval/run.js"
 
 [tasks.benchmark]
-description = "Run 20 paid Codex sessions: mise run benchmark --model <model-id>"
+description = "Run paired maintenance cases: mise run benchmark --model <model-id> [--case <id>]"
+run = "node eval/cases/run.js"
+
+[tasks."benchmark:legacy"]
+description = "Run the original 10 text probes (20 paid Codex sessions)"
 run = "node eval/gather-proof.js"
 
 [tasks."plugin:validate"]

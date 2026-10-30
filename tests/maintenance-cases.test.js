@@ -40,3 +40,26 @@ for (const c of cases.filter(c => c.kind === 'repair')) {
     });
   }
 }
+
+for (const [label, from, to] of [
+  ['constant payment identity', 'idempotencyKey: payment.id', 'idempotencyKey: undefined'],
+  ['wrong charge amount', 'gateway.charge(payment.amount,', 'gateway.charge(0,'],
+  ['immediate retry', 'await sleep(10 * 2 ** attempt);', '']
+]) {
+  test(`payment acceptance rejects ${label}`, () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-mutant-'));
+    try {
+      const caseDir = path.join(__dirname, '../eval/cases/payment_retry');
+      fs.cpSync(path.join(caseDir, 'project'), root, { recursive: true });
+      const reference = fs.readFileSync(path.join(caseDir, 'reference/payment.cjs'), 'utf8');
+      assert.ok(reference.includes(from), 'the mutation must alter the reference implementation');
+      fs.writeFileSync(path.join(root, 'payment.cjs'), reference.replace(from, to));
+      const result = spawnSync(process.execPath, ['--test', path.join(caseDir, 'acceptance.test.cjs')], {
+        env: { PATH: process.env.PATH, HOME: root, TMPDIR: root, CASE_DIR: root },
+        cwd: root, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL'
+      });
+      assert.ifError(result.error);
+      assert.notEqual(result.status, 0, `${label} must fail acceptance tests`);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}

@@ -178,13 +178,15 @@ The selection, ordering, verification/reporting format, and advice to use the ri
 
 ## Evaluation and benchmark (WIP)
 
-The repository includes a work-in-progress evaluation suite covering operational resilience, safe retries, variant modeling, and review discipline across 10 probes. Its text graders are heuristics, with executable checks for the payment fixture. They do not prove that generated code is safe.
+The primary benchmark contains **seven maintenance cases** with existing code, callers, constraints, and explicit provenance. Four repair tasks exercise exact prompt transport, payment replay and nested retries, process shutdown, and filesystem cleanup. Their acceptance tests check observable behavior. Three review controls test whether the agent responds appropriately to shared policies, independently owned rules, and a sound library configuration.
+
+Two repair cases derive from defects found in this repository; the others are constructed scenarios. This small corpus improves task context and outcome checks but does not establish how representative the cases are of production work. Review decisions and repair-test results are reported separately, and review rationales still need semantic assessment. The original ten text probes remain available as legacy diagnostics.
 
 The earlier 40% → 60% result is withdrawn as evidence of improvement: the original runner corrupted prompts through shell substitution, counted execution timeouts as answer failures, and used incomplete graders. The historical record is retained for transparency. A clean, repeated, independently reviewed benchmark is still needed.
 
 ```bash
-mise run test       # regression, fixture, CLI, and repository consistency checks
-mise run fixtures   # hand-authored fixture self-check; no model calls
+mise run test       # regression, acceptance, CLI, and repository consistency checks
+mise run fixtures   # broken/reference maintenance cases; no model calls
 ```
 
 See [`eval/README.md`](eval/README.md) for probe definitions, rubrics, promptfoo benchmarking configuration, and the evaluation roadmap.
@@ -207,9 +209,12 @@ mise run check
 | --- | --- |
 | `mise run check` | All local tests and fixture checks; no model calls. |
 | `mise run test` | Regression and repository consistency tests. |
-| `mise run fixtures --markdown` | A Markdown report of the hand-authored fixtures. |
-| `mise run eval --input completions.json --markdown` | Heuristic grading of saved model answers. |
-| `mise run benchmark --model gpt-6.1-sol` | Twenty live Codex sessions; requires model access and incurs provider costs. |
+| `mise run fixtures` | Confirm each broken project fails and each reference repair passes its acceptance tests. |
+| `mise run benchmark --model gpt-6.1-sol` | Fourteen live sessions across seven maintenance cases; requires model access and incurs provider costs. |
+| `mise run benchmark --case payment_retry --model gpt-6.1-sol` | Run one paired maintenance case. |
+| `mise run fixtures:legacy --markdown` | A Markdown report of the original hand-authored text fixtures. |
+| `mise run eval --input completions.json --markdown` | Legacy heuristic grading of saved text answers. |
+| `mise run benchmark:legacy --model gpt-6.1-sol` | The original ten text probes, retained for historical comparison. |
 | `mise run plugin:validate` | Strict plugin validation; requires the Claude Code CLI. |
 
 Run `mise tasks` to list the available tasks. The existing npm scripts also work
