@@ -1,0 +1,163 @@
+[
+  {
+    "id": "prompt_transport",
+    "kind": "repair",
+    "title": "Preserve model prompts across subprocess boundaries",
+    "testCount": 3,
+    "editable": [
+      "transport.cjs"
+    ],
+    "provenance": {
+      "kind": "repo-regression",
+      "description": "Derived from eval/gather-proof.js in commit 2e74586: JSON.stringify was used as shell escaping and backticks changed benchmark inputs."
+    },
+    "task": "Fix transport.cjs. The benchmark loses --dry-run and column names when prompts contain Markdown backticks. Existing callers require runPrompt(executable, args, prompt) to return exact stdout and propagate subprocess failures. Repair the implementation without changing caller.cjs or the public API.",
+    "constraints": [
+      "Only edit transport.cjs; no new dependencies.",
+      "Preserve exact prompt characters, newlines, and argument boundaries.",
+      "Nonzero child exits must remain failures."
+    ],
+    "rubric": [
+      "Prompt data reaches the child unchanged without shell evaluation.",
+      "Existing caller and subprocess error behavior remain compatible."
+    ]
+  },
+  {
+    "id": "payment_retry",
+    "kind": "repair",
+    "title": "Repair duplicate charges and nested retry amplification",
+    "testCount": 4,
+    "editable": [
+      "payment.cjs"
+    ],
+    "provenance": {
+      "kind": "repo-regression",
+      "description": "Combines the retry-exhaustion/permanent-error defects found in this repository's original payment fixture (2e74586) with a constructed SDK retry layer and checkout caller."
+    },
+    "task": "Fix payment.cjs. Checkout incidents report duplicate charges after an uncertain gateway response, repeated permanent declines, and too many gateway requests during outages. The gateway SDK accepts charge(amount, {idempotencyKey, maxAttempts}); it retries transient failures internally up to maxAttempts (default 2). Error.status is the HTTP status; Error.code can be ETIMEDOUT or ECONNRESET. Preserve checkout.cjs and the pay(gateway, payment) API. payment.id identifies one durable logical payment and callers may invoke checkout again with that same ID.",
+    "constraints": [
+      "Only edit payment.cjs; no new dependencies.",
+      "At most three underlying gateway attempts per pay call, including SDK retries.",
+      "Retry transient failures only; preserve stable logical identity across retries and caller replays.",
+      "Successful responses and final errors must propagate; apply a bounded delay between retries."
+    ],
+    "rubric": [
+      "A committed-but-timed-out payment and a caller replay do not create a second charge.",
+      "A permanent 400 decline causes one underlying attempt.",
+      "A persistent transient outage exhausts at most three attempts and rejects.",
+      "Unclassified failures propagate without automatic retries."
+    ]
+  },
+  {
+    "id": "worker_shutdown",
+    "kind": "repair",
+    "title": "Drain an existing leased-message worker",
+    "testCount": 4,
+    "editable": [
+      "worker.cjs"
+    ],
+    "provenance": {
+      "kind": "constructed",
+      "description": "Constructed leased-queue maintenance scenario; not a claimed production incident or a real cloud SDK integration."
+    },
+    "task": "Fix worker.cjs for rolling container replacements. The supervisor sends SIGTERM or SIGINT; the current worker exits before the active job is acknowledged. queue.receive() leases a job, queue.ack(job) records durable completion, and queue.close() cancels a pending receive by resolving it to null. Unacknowledged leases become available again. start(queue, handle, {shutdownMs}) must resolve after a clean shutdown; handle returns only after durable effects complete. The process must exit unsuccessfully when active work exceeds shutdownMs.",
+    "constraints": [
+      "Only edit worker.cjs; preserve the start API.",
+      "Stop new intake on either termination signal; finish and acknowledge successful active work.",
+      "Close a pending receive and bound shutdown even when a handler never resolves.",
+      "Do not acknowledge failed or unfinished work."
+    ],
+    "rubric": [
+      "SIGTERM during processing produces completion and acknowledgement before a successful exit.",
+      "SIGINT during polling closes the queue without starting another job.",
+      "A stalled handler exceeds its deadline and exits nonzero without acknowledgement."
+    ]
+  },
+  {
+    "id": "dry_run",
+    "kind": "repair",
+    "title": "Repair a destructive cache maintenance CLI",
+    "testCount": 4,
+    "editable": [
+      "prune.cjs"
+    ],
+    "provenance": {
+      "kind": "constructed",
+      "description": "Constructed filesystem maintenance scenario with real temporary directories, timestamps, and symlinks; no claimed production origin."
+    },
+    "task": "Repair prune.cjs. Operators report that previewing cache cleanup deletes directories, and recent caches disappear during normal cleanup. The existing invocation is node prune.cjs --dir PATH --days N [--dry-run]. Remove only immediate real child directories strictly older than N days. Preserve files, fresh directories, symlinks, and anything outside the target. Reject nonpositive/noninteger retention and an invalid or symlink target directory before deleting anything.",
+    "constraints": [
+      "Only edit prune.cjs; preserve the CLI flags; no new dependencies.",
+      "Dry-run makes no filesystem changes and reports planned removals.",
+      "Ordinary cleanup removes only eligible directories.",
+      "Bad inputs exit nonzero with actionable operator feedback."
+    ],
+    "rubric": [
+      "Dry-run preserves every entry and reports the eligible path.",
+      "Actual cleanup preserves recent directories, files, links, and external targets.",
+      "Invalid retention leaves data intact.",
+      "Invalid target paths fail clearly without deleting data."
+    ]
+  },
+  {
+    "id": "shared_policy",
+    "kind": "review",
+    "title": "Recognize one deliberately shared address policy",
+    "expectedDecision": "share",
+    "provenance": {
+      "kind": "constructed",
+      "description": "Paired control with independent_policy: the implementation is identical, but documented ownership and change requirements differ."
+    },
+    "task": "Review the proposed extraction in proposal.md against policy.md and the current callers. Return JSON only: {\"decision\":\"share\" or \"keep-separate\", \"rationale\":\"...\", \"findings\":[]}. Assess this particular change; do not invent differences in domain rules that contradict the supplied policy.",
+    "constraints": [
+      "No file changes.",
+      "Use the documented policy ownership and future change requirements as evidence."
+    ],
+    "rubric": [
+      "Recognizes that both callers deliberately implement one policy and must change together.",
+      "Allows the extraction while preserving the purpose-specific public entry points.",
+      "Does not reject sharing merely because the callers are named billing and shipping."
+    ]
+  },
+  {
+    "id": "independent_policy",
+    "kind": "review",
+    "title": "Avoid coupling independently owned address policies",
+    "expectedDecision": "keep-separate",
+    "provenance": {
+      "kind": "constructed",
+      "description": "Paired control with shared_policy. Same implementation and proposal, different documented policy ownership and independent changes."
+    },
+    "task": "Review the proposed extraction in proposal.md against policy.md and the current callers. Return JSON only: {\"decision\":\"share\" or \"keep-separate\", \"rationale\":\"...\", \"findings\":[]}. Assess this particular change using the supplied requirements.",
+    "constraints": [
+      "No file changes.",
+      "Preserve independently owned billing and shipping policy boundaries."
+    ],
+    "rubric": [
+      "Identifies independently governed requirements and documented upcoming divergence.",
+      "Keeps the policy entry points independent rather than merging based on identical current syntax.",
+      "Explains the concrete coupling cost using the supplied change requirements."
+    ]
+  },
+  {
+    "id": "library_adaptation",
+    "kind": "review",
+    "title": "Accept valid library configuration without adding service infrastructure",
+    "expectedDecision": "accept",
+    "provenance": {
+      "kind": "constructed",
+      "description": "Constructed no-finding control using Node filesystem APIs and explicit deployment/consumer contracts."
+    },
+    "task": "Review this small library against contract.md for concrete defects. Return JSON only: {\"decision\":\"accept\" or \"request-changes\", \"rationale\":\"...\", \"findings\":[]}. Each finding, if any, must name a location, consequence, and proportionate fix supported by the supplied contract. Do not treat missing service machinery as a defect by itself.",
+    "constraints": [
+      "No file changes.",
+      "The library does not own an HTTP server, worker process, or deployment lifecycle.",
+      "Mounted files are an intentional supported configuration source; consumers own the file lifecycle."
+    ],
+    "rubric": [
+      "Accepts the explicit valid mounted-file configuration contract.",
+      "Does not demand a port, signal handler, environment-only secrets, or a new configuration framework.",
+      "Produces no unsupported defect findings."
+    ]
+  }
+]

@@ -1,0 +1,1 @@
+Billing is owned by the payments team and shipping by fulfillment. They release independently. Next release, shipping must accept pickup orders without a postal code; billing must still require one. Neither team may change the other policy as a side effect.

@@ -1,0 +1,1 @@
+Extract the identical predicate into one validateAddress function. Keep validateBillingAddress and validateShippingAddress as public wrappers that delegate to it. No flags or mode switches are proposed.

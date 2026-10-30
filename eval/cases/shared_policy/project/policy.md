@@ -1,0 +1,1 @@
+Both callers deliberately implement the same AddressMinimum policy, owned by the compliance team. Any change must apply to billing and shipping in the same release. Neither public wrapper may add independent rules; callers need the separate names for compatibility.
