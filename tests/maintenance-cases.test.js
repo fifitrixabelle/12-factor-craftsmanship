@@ -63,3 +63,19 @@ for (const [label, from, to] of [
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 }
+
+test('worker acceptance permits queue closure between completion and acknowledgement', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-worker-order-'));
+  try {
+    const caseDir = path.join(__dirname, '../eval/cases/worker_shutdown');
+    const reference = fs.readFileSync(path.join(caseDir, 'reference/worker.cjs'), 'utf8');
+    assert.ok(reference.includes('queue.close();'));
+    fs.writeFileSync(path.join(root, 'worker.cjs'), reference.replace('queue.close();', 'Promise.resolve().then(() => queue.close());'));
+    const result = spawnSync(process.execPath, ['--test', path.join(caseDir, 'acceptance.test.cjs')], {
+      env: { PATH: process.env.PATH, HOME: root, TMPDIR: root, CASE_DIR: root },
+      cwd: root, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL'
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

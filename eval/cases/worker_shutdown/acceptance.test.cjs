@@ -49,7 +49,12 @@ async function terminate(mode, signal) {
 test('termination during processing drains and acknowledges before exit', async () => {
   const result = await terminate('work', 'SIGTERM');
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /DONE\nACK/);
+  const events = result.stdout.trim().split(/\r?\n/);
+  const started = events.indexOf('START');
+  const completed = events.indexOf('DONE');
+  const acknowledged = events.indexOf('ACK');
+  assert.ok(started >= 0 && completed > started && acknowledged > completed, result.stdout);
+  assert.equal(events.filter(event => event === 'ACK').length, 1);
   assert.doesNotMatch(result.stdout, /EXTRA_POLL/);
 });
 test('termination during polling closes intake', async () => {

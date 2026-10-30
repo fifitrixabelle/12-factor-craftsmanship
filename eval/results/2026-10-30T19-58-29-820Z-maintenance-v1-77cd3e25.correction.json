@@ -1,0 +1,100 @@
+{
+  "type": "acceptance-test-correction",
+  "schemaVersion": 1,
+  "suiteVersion": "maintenance-v1",
+  "sourceRecord": "2026-10-30T19-58-29-820Z-maintenance-v1-77cd3e25.json",
+  "sourceRecordSha256": "0f66bfaad1e9306503f14af01ee84e175875e7554f6a585943e38582ea7b8b15",
+  "regradedAt": "2026-10-30T20:07:39.485Z",
+  "nodeVersion": "v24.22.2",
+  "reason": "The old test required adjacent DONE and ACK log lines. The contract requires completion before acknowledgement, allowing unrelated queue-closure events between them.",
+  "changedCheck": {
+    "path": "eval/cases/worker_shutdown/acceptance.test.cjs",
+    "originalSha256": "03fbb6ff3ed573b06a044785daffb4358c8cea4c6657ffd93c577ce1011184b6",
+    "updatedSha256": "1af4358d7d3d3682cebf4e222c20d10d7cdc9dbd9754d3c7404ff90b1b1e4c39"
+  },
+  "regrades": [
+    {
+      "case": "worker_shutdown",
+      "arm": "baseline",
+      "candidateFilesSha256": "1676865d0059e31d78f9cef367527929af1759d2d1ec8dbd9a036376acd0fb93",
+      "originalGrade": {
+        "status": "completed",
+        "method": "acceptance-tests",
+        "pass": false,
+        "expectedTests": 4,
+        "actualTests": 4,
+        "exitCode": 1,
+        "stdout": "TAP version 13\n# Subtest: termination during processing drains and acknowledges before exit\nnot ok 1 - termination during processing drains and acknowledges before exit\n  ---\n  duration_ms: 34.047333\n  type: 'test'\n  location: '/Users/fifi/g/fifitrixabelle/12-factor-craftsmanship/eval/cases/worker_shutdown/acceptance.test.cjs:49:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    The input did not match the regular expression /DONE\\nACK/. Input:\n    \n    'START\\nDONE\\nCLOSED\\nACK\\n'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n  actual: |-\n    START\n    DONE\n    CLOSED\n    ACK\n    \n  operator: 'match'\n  stack: |-\n    TestContext.<anonymous> (/Users/fifi/g/fifitrixabelle/12-factor-craftsmanship/eval/cases/worker_shutdown/acceptance.test.cjs:52:10)\n    async Test.run (node:internal/test_runner/test:1409:7)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)\n  ...\n# Subtest: termination during polling closes intake\nok 2 - termination during polling closes intake\n  ---\n  duration_ms: 31.261791\n  type: 'test'\n  ...\n# Subtest: a stalled job exceeds its deadline without acknowledgement\nok 3 - a stalled job exceeds its deadline without acknowledgement\n  ---\n  duration_ms: 243.771792\n  type: 'test'\n  ...\n# Subtest: a failed job remains unacknowledged\nok 4 - a failed job remains unacknowledged\n  ---\n  duration_ms: 66.05675\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 3\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 422.471833\n",
+        "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-maintenance-s3xFf2/worker_shutdown-baseline-lRRsU0\" (codex_home: AbsolutePathBuf(\"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-maintenance-s3xFf2/worker_shutdown-baseline-lRRsU0/.codex\"))\n"
+      },
+      "grade": {
+        "status": "completed",
+        "method": "acceptance-tests",
+        "pass": true,
+        "expectedTests": 4,
+        "actualTests": 4,
+        "exitCode": 0,
+        "stdout": "TAP version 13\n# Subtest: termination during processing drains and acknowledges before exit\nok 1 - termination during processing drains and acknowledges before exit\n  ---\n  duration_ms: 34.529\n  type: 'test'\n  ...\n# Subtest: termination during polling closes intake\nok 2 - termination during polling closes intake\n  ---\n  duration_ms: 32.258416\n  type: 'test'\n  ...\n# Subtest: a stalled job exceeds its deadline without acknowledgement\nok 3 - a stalled job exceeds its deadline without acknowledgement\n  ---\n  duration_ms: 235.317209\n  type: 'test'\n  ...\n# Subtest: a failed job remains unacknowledged\nok 4 - a failed job remains unacknowledged\n  ---\n  duration_ms: 44.901417\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 393.274959\n",
+        "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-worker-regrade-NBsuPS\" (codex_home: AbsolutePathBuf(\"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-worker-regrade-NBsuPS/.codex\"))\n"
+      }
+    },
+    {
+      "case": "worker_shutdown",
+      "arm": "skill",
+      "candidateFilesSha256": "e81ef6a4d9be9c922319167a12af6222e35ae8a9a725b0f04c009451c875315b",
+      "originalGrade": {
+        "status": "completed",
+        "method": "acceptance-tests",
+        "pass": false,
+        "expectedTests": 4,
+        "actualTests": 4,
+        "exitCode": 1,
+        "stdout": "TAP version 13\n# Subtest: termination during processing drains and acknowledges before exit\nnot ok 1 - termination during processing drains and acknowledges before exit\n  ---\n  duration_ms: 38.270459\n  type: 'test'\n  location: '/Users/fifi/g/fifitrixabelle/12-factor-craftsmanship/eval/cases/worker_shutdown/acceptance.test.cjs:49:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    The input did not match the regular expression /DONE\\nACK/. Input:\n    \n    'START\\nDONE\\nCLOSED\\nACK\\n'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n  actual: |-\n    START\n    DONE\n    CLOSED\n    ACK\n    \n  operator: 'match'\n  stack: |-\n    TestContext.<anonymous> (/Users/fifi/g/fifitrixabelle/12-factor-craftsmanship/eval/cases/worker_shutdown/acceptance.test.cjs:52:10)\n    process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    async Test.run (node:internal/test_runner/test:1409:7)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)\n  ...\n# Subtest: termination during polling closes intake\nok 2 - termination during polling closes intake\n  ---\n  duration_ms: 35.973458\n  type: 'test'\n  ...\n# Subtest: a stalled job exceeds its deadline without acknowledgement\nok 3 - a stalled job exceeds its deadline without acknowledgement\n  ---\n  duration_ms: 238.696042\n  type: 'test'\n  ...\n# Subtest: a failed job remains unacknowledged\nok 4 - a failed job remains unacknowledged\n  ---\n  duration_ms: 43.875375\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 3\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 408.576291\n",
+        "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-maintenance-s3xFf2/worker_shutdown-skill-PI8HpW\" (codex_home: AbsolutePathBuf(\"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-maintenance-s3xFf2/worker_shutdown-skill-PI8HpW/.codex\"))\n"
+      },
+      "grade": {
+        "status": "completed",
+        "method": "acceptance-tests",
+        "pass": true,
+        "expectedTests": 4,
+        "actualTests": 4,
+        "exitCode": 0,
+        "stdout": "TAP version 13\n# Subtest: termination during processing drains and acknowledges before exit\nok 1 - termination during processing drains and acknowledges before exit\n  ---\n  duration_ms: 34.839709\n  type: 'test'\n  ...\n# Subtest: termination during polling closes intake\nok 2 - termination during polling closes intake\n  ---\n  duration_ms: 32.645417\n  type: 'test'\n  ...\n# Subtest: a stalled job exceeds its deadline without acknowledgement\nok 3 - a stalled job exceeds its deadline without acknowledgement\n  ---\n  duration_ms: 233.537334\n  type: 'test'\n  ...\n# Subtest: a failed job remains unacknowledged\nok 4 - a failed job remains unacknowledged\n  ---\n  duration_ms: 45.452917\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 391.013042\n",
+        "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-worker-regrade-WjGM7U\" (codex_home: AbsolutePathBuf(\"/var/folders/fr/5klb4z7j4b32h17rd3sn24h80000gn/T/craft-worker-regrade-WjGM7U/.codex\"))\n"
+      }
+    }
+  ],
+  "limitations": [
+    "Only the saved worker candidates were re-executed; other original grades are retained.",
+    "Review decisions still require semantic assessment of their rationales.",
+    "One paired run does not establish a skill effect."
+  ],
+  "originalSummary": {
+    "repairs": {
+      "pairedCompleted": 4,
+      "baselinePass": 3,
+      "skillPass": 3
+    },
+    "reviewDecisions": {
+      "pairedCompleted": 3,
+      "baselinePass": 3,
+      "skillPass": 3
+    },
+    "executionErrors": 0,
+    "gradingErrors": 0
+  },
+  "correctedSummary": {
+    "repairs": {
+      "pairedCompleted": 4,
+      "baselinePass": 4,
+      "skillPass": 4
+    },
+    "reviewDecisions": {
+      "pairedCompleted": 3,
+      "baselinePass": 3,
+      "skillPass": 3
+    },
+    "executionErrors": 0,
+    "gradingErrors": 0
+  }
+}

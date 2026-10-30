@@ -155,3 +155,9 @@ The [corrected-collector diagnostic run](results/2026-10-30T19-10-44-432Z-gpt-6_
 completed all twenty sessions but exposed further text-grader false negatives. Those
 records do not establish a quality difference. Maintenance-v1 is a different corpus
 and measurement method; its scores must not be directly compared with either older run.
+
+The [first maintenance-v1 run](results/2026-10-30T19-58-29-820Z-maintenance-v1-77cd3e25.md)
+completed all fourteen sessions. After correcting a worker assertion that incorrectly
+required adjacent log events, both arms pass 4/4 repair cases and select 3/3 expected
+review decisions. The original result and a separately hashed regrading correction
+are retained. This single tied run does not demonstrate an incremental skill benefit.
