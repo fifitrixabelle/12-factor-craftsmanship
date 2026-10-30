@@ -1,7 +1,8 @@
 /**
  * 12-factor-craftsmanship Evaluation Graders
  *
- * Deterministic rubric evaluators for the 10 core craftsmanship capabilities:
+ * Heuristic text checks for the 10 core craftsmanship capabilities.
+ * These checks are diagnostic signals, not proof of runtime safety or correctness.
  * 1. retry_idempotency: Safe retry with idempotency key reuse, bounded attempts & backoff.
  * 2. state_variants: Illegal states unrepresentable (discriminated unions vs boolean flags).
  * 3. wrong_abstraction: Resisting premature DRY across independent domain rules.
@@ -15,6 +16,19 @@
  *
  * Each grader returns: { pass: boolean, score: number, reason: string }
  */
+
+function checked(criteria) {
+  const checks = Object.entries(criteria).map(([criterion, pass]) => ({ criterion, pass: Boolean(pass) }));
+  const failures = checks.filter(check => !check.pass);
+  return {
+    pass: failures.length === 0,
+    score: failures.length === 0 ? 1 : 0,
+    method: 'heuristic',
+    checks,
+    reason: failures.length ? `Missing heuristic evidence: ${failures.map(check => check.criterion).join('; ')}`
+      : 'All heuristic text checks passed; semantic review or execution is still required.'
+  };
+}
 
 const GRADERS = {
   /**
@@ -91,12 +105,12 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Safe retry implementation: reuses idempotency key, bounds attempts, applies backoff, and targets transient errors.'
-    };
+    return checked({
+      'stable idempotency key': handlesIdempotency,
+      'bounded attempts': boundedAttempts,
+      'backoff delay': hasBackoff,
+      'transient failure classification': checksTransient
+    });
   },
 
   /**
@@ -137,7 +151,9 @@ const GRADERS = {
 
     // State-specific fields must be tied to their state
     const scopedFields =
-      /(?:progress[\s\S]*?downloadUrl|downloadUrl[\s\S]*?error)/i.test(text);
+      /\{(?=[^{}]*status\s*:\s*['"]processing['"])(?=[^{}]*progress\s*:)[^{}]*\}/i.test(text) &&
+      /\{(?=[^{}]*status\s*:\s*['"]completed['"])(?=[^{}]*downloadUrl\s*:)[^{}]*\}/i.test(text) &&
+      /\{(?=[^{}]*status\s*:\s*['"]failed['"])(?=[^{}]*error\s*:)[^{}]*\}/i.test(text);
 
     if (!usesDiscriminatedUnion) {
       return {
@@ -148,12 +164,7 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Models state using variants/discriminated unions, making illegal states unrepresentable.'
-    };
+    return checked({ 'variant state model': usesDiscriminatedUnion, 'state-specific fields': scopedFields });
   },
 
   /**
@@ -201,12 +212,7 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Correctly warns against premature abstraction (Sandi Metz), noting independent domain lifecycles.'
-    };
+    return checked({ 'independent domain responsibilities': recognizesSeparation, 'cost of coupling': warnsOfCoupling });
   },
 
   /**
@@ -273,12 +279,12 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Graceful shutdown supported: traps SIGTERM/SIGINT, halts new work, and drains in-flight tasks.'
-    };
+    return checked({
+      'termination signals': listensToSignals,
+      'stop new work': stopsNewWork,
+      'drain in-flight work': drainsInFlight,
+      'bounded shutdown deadline': /(?:setTimeout|AbortSignal\.timeout)\s*\(/i.test(text)
+    });
   },
 
   /**
@@ -289,8 +295,7 @@ const GRADERS = {
 
     // Anti-pattern: hardcoded fallback secret
     const hardcodedSecret =
-      /process\.env\.\w+\s*\|\|\s*['"][a-zA-Z0-9_\-]{6,}['"]/i.test(text) &&
-      /(?:secret|password|key|token|auth)/i.test(text);
+      /process\.env\.\w*(?:SECRET|PASSWORD|KEY|TOKEN|AUTH|DATABASE_URL)\w*\s*(?:\|\||\?\?)\s*['"][^'"]+['"]/i.test(text);
 
     if (hardcodedSecret) {
       return {
@@ -302,13 +307,12 @@ const GRADERS = {
     }
 
     // Anti-pattern: raw headers logged directly without redaction
+    const withoutSanitizedHeaders = text.replace(
+      /\b(?:redact|sanitize|mask|filter)\w*\s*\(\s*(?:req|request)\.headers\s*\)/gi,
+      'SANITIZED_HEADERS'
+    );
     const leaksHeaders =
-      /(?:console\.log|logger\.\w+)\([\s\S]*?(?:req\.headers|request\.headers)[\s\S]*?\)/i.test(
-        text
-      ) &&
-      !/(?:redact|sanitize|mask|omit|filter|exclude|authorization|cookie)/i.test(
-        text
-      );
+      /(?:console\.(?:log|info|error)|logger\.\w+|process\.(?:stdout|stderr)\.write)\s*\([^;]*\b(?:req|request)\.headers\b/i.test(withoutSanitizedHeaders);
 
     if (leaksHeaders) {
       return {
@@ -331,9 +335,9 @@ const GRADERS = {
 
     // Must output structured telemetry to stdout/stderr (not writing to file)
     const logsToStdout =
-      /(?:stdout|stderr|console\.(?:log|info|error)|JSON\.stringify)/i.test(
-        text
-      ) && !/fs\.writeFile(?:Sync)?\(.*log/i.test(text);
+      /(?:process\.(?:stdout|stderr)\.write|console\.(?:log|info|error))\s*\(/i.test(text) &&
+      /JSON\.stringify\s*\(/i.test(text) &&
+      !/fs\.(?:writeFile|appendFile)(?:Sync)?\s*\(/i.test(text);
 
     if (!readsEnv) {
       return {
@@ -352,12 +356,12 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Safe config and telemetry: externalizes environment variables, prevents secret leakage, and logs to stdout.'
-    };
+    return checked({
+      'external configuration': readsEnv,
+      'no detected fallback credentials': !hardcodedSecret,
+      'sensitive data omitted or scrubbed': scrubsSensitiveData && !leaksHeaders,
+      'structured standard-stream logs': logsToStdout
+    });
   },
 
   /**
@@ -377,7 +381,7 @@ const GRADERS = {
       /if\s+not\s+(?:args\.)?dry_run:[\s\S]{1,300}?(?:shutil\.rmtree|os\.remove|unlink|rmdir|rmSync)/i.test(
         text
       ) ||
-      /if\s*\(!?(?:args\.)?dryRun\)[\s\S]{1,300}?(?:unlink|rmdir|rmSync|rmtree)/i.test(
+      /if\s*\(!(?:args\.)?dryRun\)[\s\S]{1,300}?(?:unlink|rmdir|rmSync|rmtree)/i.test(
         text
       ) ||
       /if\s*\((?:args\.)?dryRun\)[\s\S]{1,300}?else[\s\S]{1,300}?(?:unlink|rmdir|rmSync)/i.test(
@@ -439,12 +443,12 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'DWIM compliance: --dry-run prevents all writes, reports operations clearly, and validates input.'
-    };
+    return checked({
+      'guarded deletion': performsDelete && guardsDelete,
+      'dry-run branch': respectsDryRun,
+      'operator feedback': actionableOutput,
+      'input validation': validatesInput
+    });
   },
 
   /**
@@ -454,10 +458,9 @@ const GRADERS = {
     const text = String(output || '');
 
     // Anti-pattern: database queries or HTTP calls inside calculate function
-    const entanglesIO =
-      /function\s+calculate[\s\S]*?(?:db\.|\.query\(|fetch\(|axios\.|\.execute\()/i.test(
-        text
-      );
+    // Approximate declaration boundaries; this is not a JavaScript parser.
+    const calculations = text.match(/function\s+calculate[\s\S]*?(?=\n\s*(?:export\s+)?(?:async\s+)?function\s+|$)/gi) || [];
+    const entanglesIO = calculations.some(body => /(?:db\.|\.query\(|fetch\(|axios\.|\.execute\()/i.test(body));
 
     if (entanglesIO) {
       return {
@@ -490,12 +493,7 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Separates business calculation rules from I/O, allowing isolated deterministic testing.'
-    };
+    return checked({ 'calculation separated from I/O': isolatesCalculation && !entanglesIO, 'isolated testing example': allowsPureTesting });
   },
 
   /**
@@ -536,7 +534,7 @@ const GRADERS = {
 
     // Delays dropping old column
     const delaysDestructiveDrop =
-      /(?:drop\s+column[\s\S]*?(?:later|next\s+release|after\s+deploy|decommissioned)|delay\s+destructive)/i.test(
+      /(?:drop[\s\S]*?(?:later|next\s+release|after\s+(?:old|deploy)|decommissioned)|(?:subsequent|later)[\s\S]*?drop|delay\s+destructive)/i.test(
         text
       );
 
@@ -558,12 +556,11 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Safe release procedure: applies expand-and-contract migration with backward compatibility during rolling deploy.'
-    };
+    return checked({
+      'coexisting application versions': acknowledgesCoexistence,
+      'phased schema migration': multiPhase,
+      'destructive change deferred': delaysDestructiveDrop
+    });
   },
 
   /**
@@ -592,7 +589,7 @@ const GRADERS = {
 
     // Recognizes sound adaptation
     const recognizesSoundAdaptation =
-      /(?:sound\s+adaptation|invocation\s+contract|managed\s+function|serverless|lambda|handler\s+contract|departure\s+from\s+default|not\s+a\s+defect|incorrect|disagree)/i.test(
+      /(?:sound\s+adaptation|invocation\s+contract|handler\s+contract|not\s+a\s+defect|incorrect|disagree|reject\s+(?:the\s+)?claim)/i.test(
         text
       );
 
@@ -611,12 +608,11 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Sound review judgment: distinguishes legitimate platform adaptations from actual defects.'
-    };
+    return checked({
+      'reject dogmatic port claim': recognizesSoundAdaptation,
+      'identify concrete defect': catchesRealIssue,
+      'location, consequence, and fix': /(?:location|JSON\.parse)/i.test(text) && /(?:consequence|throws|500|failed invocation)/i.test(text) && /(?:fix|try\s*\/\s*catch|400)/i.test(text)
+    });
   },
 
   /**
@@ -661,12 +657,7 @@ const GRADERS = {
       };
     }
 
-    return {
-      pass: true,
-      score: 1,
-      reason:
-        'Factor 13 applied: leverages framework conventions, avoiding redundant configuration overhead.'
-    };
+    return checked({ 'established framework convention': usesConvention, 'exceptions or wiring cost explained': explainsExceptions });
   }
 };
 
@@ -681,22 +672,23 @@ module.exports = function grade(output, context) {
     (context && context.probe);
   if (!probe) {
     return {
-      pass: true,
-      score: 1,
-      reason: 'No probe specified in context. Skipped.'
+      pass: false,
+      score: 0,
+      reason: 'No probe specified in context.'
     };
   }
 
   const grader = GRADERS[probe];
-  if (!grader) {
+  if (!Object.hasOwn(GRADERS, probe)) {
     return {
-      pass: true,
-      score: 1,
-      reason: `Unknown probe '${probe}'. Skipped.`
+      pass: false,
+      score: 0,
+      reason: `Unknown probe '${probe}'.`
     };
   }
 
-  return grader(output);
+  const result = grader(output);
+  return { method: 'heuristic', checks: [{ criterion: result.reason, pass: result.pass }], ...result };
 };
 
 module.exports.GRADERS = GRADERS;

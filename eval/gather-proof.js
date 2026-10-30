@@ -1,120 +1,140 @@
 #!/usr/bin/env node
-/**
- * Live Proof Gatherer:
- * Executes the 10 eval probes against gpt-6.1-sol via `codex exec`
- * both WITHOUT the skill (baseline arm) and WITH 12-factor-craftsmanship (skill arm).
- *
- * Saves full outputs and grades to eval/results/live-proof-gpt-6.1-sol.json
- * and prints an empirical comparison scorecard.
- */
-
-const { execSync } = require('node:child_process');
+/** Collect paired model responses. Importing this module never starts a run. */
+const { spawnSync, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const grade = require('./graders');
 const probes = require('./probes.json');
 
-const skillPath = path.join(__dirname, '..', 'skills', '12-factor-craftsmanship', 'SKILL.md');
-const skillContent = fs.readFileSync(skillPath, 'utf8');
-
-const resultsDir = path.join(__dirname, 'results');
-fs.mkdirSync(resultsDir, { recursive: true });
-
-const tmpDir = path.join(__dirname, '.tmp');
-fs.mkdirSync(tmpDir, { recursive: true });
-
-console.log('================================================================');
-console.log('   GATHERING EMPIRICAL PROOF: 10 PROBES ON gpt-6.1-sol           ');
-console.log('================================================================\n');
-
-const empiricalRecord = {
-  timestamp: new Date().toISOString(),
-  model: 'gpt-6.1-sol',
-  probes: []
-};
-
-let baselinePassCount = 0;
-let skillPassCount = 0;
-
-for (let i = 0; i < probes.length; i++) {
-  const p = probes[i];
-  console.log(`[${i + 1}/${probes.length}] Running probe: ${p.id} (${p.title})...`);
-
-  // 1. Run Baseline (no skill)
-  const baselineOutFile = path.join(tmpDir, `${p.id}_baseline.txt`);
-  try {
-    execSync(
-      `codex exec -c 'model_reasoning_effort="low"' -s read-only -o ${baselineOutFile} ${JSON.stringify(p.prompt)}`,
-      { stdio: 'ignore', timeout: 120000 }
-    );
-  } catch (err) {
-    fs.writeFileSync(baselineOutFile, `ERROR: ${err.message}`);
-  }
-  const baselineOutput = fs.existsSync(baselineOutFile)
-    ? fs.readFileSync(baselineOutFile, 'utf8')
-    : '';
-  const baselineGrade = grade(baselineOutput, { vars: { probe: p.id } });
-
-  // 2. Run With Skill
-  const skillOutFile = path.join(tmpDir, `${p.id}_skill.txt`);
-  const promptWithSkill = `You are a software engineer applying the following skill:\n\n${skillContent}\n\nTask:\n${p.prompt}`;
-  try {
-    execSync(
-      `codex exec -c 'model_reasoning_effort="low"' -s read-only -o ${skillOutFile} ${JSON.stringify(promptWithSkill)}`,
-      { stdio: 'ignore', timeout: 120000 }
-    );
-  } catch (err) {
-    fs.writeFileSync(skillOutFile, `ERROR: ${err.message}`);
-  }
-  const skillOutput = fs.existsSync(skillOutFile)
-    ? fs.readFileSync(skillOutFile, 'utf8')
-    : '';
-  const skillGrade = grade(skillOutput, { vars: { probe: p.id } });
-
-  if (baselineGrade.pass) baselinePassCount++;
-  if (skillGrade.pass) skillPassCount++;
-
-  console.log(`  -> Baseline:      ${baselineGrade.pass ? 'PASS' : 'FAIL'} (${baselineGrade.reason})`);
-  console.log(`  -> Craftsmanship: ${skillGrade.pass ? 'PASS' : 'FAIL'} (${skillGrade.reason})\n`);
-
-  empiricalRecord.probes.push({
-    id: p.id,
-    title: p.title,
-    factor: p.factor,
-    domain: p.domain,
-    prompt: p.prompt,
-    baseline: {
-      pass: baselineGrade.pass,
-      score: baselineGrade.score,
-      reason: baselineGrade.reason,
-      output: baselineOutput
-    },
-    skill: {
-      pass: skillGrade.pass,
-      score: skillGrade.score,
-      reason: skillGrade.reason,
-      output: skillOutput
-    }
+function collectResponse({ prompt, model, workDir, outputFile, executable = 'codex', timeoutMs = 120000 }) {
+  // Never let an old answer turn a failed invocation into a successful completion.
+  fs.rmSync(outputFile, { force: true });
+  const started = performance.now();
+  const result = spawnSync(executable, [
+    'exec', '--model', model, '-c', 'model_reasoning_effort="low"',
+    '--ignore-user-config', '--ephemeral', '--skip-git-repo-check',
+    '--sandbox', 'read-only', '--cd', workDir, '--json',
+    '--output-last-message', outputFile, '-'
+  ], {
+    input: prompt, encoding: 'utf8', cwd: workDir, timeout: timeoutMs, killSignal: 'SIGKILL',
+    maxBuffer: 16 * 1024 * 1024
   });
+  const durationMs = Math.round(performance.now() - started);
+  if (result.error || result.status !== 0 || !fs.existsSync(outputFile)) {
+    return {
+      status: 'execution_error', output: null, durationMs, usage: null,
+      error: result.error?.message || `Exit ${result.status}, signal ${result.signal || 'none'}; missing or failed completion`,
+      stderr: result.stderr || '', signal: result.signal
+    };
+  }
+  const output = fs.readFileSync(outputFile, 'utf8');
+  if (!output.trim()) {
+    return { status: 'execution_error', output: null, durationMs, usage: null, error: 'Empty completion' };
+  }
+  // Usage may be absent on older CLIs. Null means unavailable, never zero tokens.
+  let usage = null;
+  for (const line of (result.stdout || '').split('\n')) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type === 'turn.completed' && event.usage) usage = event.usage;
+    } catch { /* CLI diagnostics are not always JSON. */ }
+  }
+  return { status: 'completed', output, durationMs, usage };
 }
 
-empiricalRecord.summary = {
-  total: probes.length,
-  baselineScore: baselinePassCount,
-  baselinePercent: Math.round((baselinePassCount / probes.length) * 100),
-  skillScore: skillPassCount,
-  skillPercent: Math.round((skillPassCount / probes.length) * 100),
-  netDelta: Math.round(((skillPassCount - baselinePassCount) / probes.length) * 100)
-};
+function summarize(records) {
+  const paired = records.filter(p => p.baseline.status === 'completed' && p.skill.status === 'completed');
+  const baselineScore = paired.filter(p => p.baseline.grade.pass).length;
+  const skillScore = paired.filter(p => p.skill.grade.pass).length;
+  return {
+    total: records.length,
+    pairedCompleted: paired.length,
+    executionErrors: records.reduce((sum, p) => sum + ['baseline', 'skill'].filter(arm => p[arm].status !== 'completed').length, 0),
+    baselineScore, skillScore,
+    deltaPercentagePoints: paired.length ? 100 * (skillScore - baselineScore) / paired.length : null
+  };
+}
 
-const resultFilePath = path.join(resultsDir, 'live-proof-gpt-6.1-sol.json');
-fs.writeFileSync(resultFilePath, JSON.stringify(empiricalRecord, null, 2));
+function gatherProof({ model, resultFile, executable = 'codex', timeoutMs = 120000 }) {
+  if (!model) throw new Error('Specify --model <model-id>; the runner never assumes your configured model.');
+  const root = path.join(__dirname, '..');
+  const skillContent = fs.readFileSync(path.join(root, 'skills/12-factor-craftsmanship/SKILL.md'), 'utf8');
+  const hash = content => crypto.createHash('sha256').update(content).digest('hex');
+  const timestamp = new Date().toISOString();
+  resultFile ||= path.join(__dirname, 'results', `${timestamp.replace(/[:.]/g, '-')}-${model.replace(/[^a-z0-9_-]/gi, '_')}-${crypto.randomUUID().slice(0, 8)}.json`);
+  fs.mkdirSync(path.dirname(path.resolve(resultFile)), { recursive: true });
+  const version = spawnSync(executable, ['--version'], { encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL' });
+  if (version.error || version.status !== 0) throw new Error(`Cannot run ${executable}: ${version.error?.message || version.stderr}`);
+  const record = {
+    schemaVersion: 2, timestamp, requestedModel: model,
+    cliVersion: version.stdout.trim(), nodeVersion: process.version,
+    sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+    sourceDirty: Boolean(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()),
+    skillSha256: hash(skillContent),
+    probesSha256: hash(fs.readFileSync(path.join(__dirname, 'probes.json'))),
+    gradersSha256: hash(fs.readFileSync(path.join(__dirname, 'graders.js'))),
+    runnerSha256: hash(fs.readFileSync(__filename)),
+    settings: { reasoningEffort: 'low', timeoutMs, sandbox: 'read-only', ignoreUserConfig: true, ephemeral: true },
+    limitations: [
+      'Single sample per probe; heuristic grades require manual or executable validation.',
+      'Temporary working directories and ignored user config reduce ambient instructions; global skills and provider defaults may still affect both arms.',
+      'requestedModel records the selected CLI argument, not independently verified server routing.',
+      'Usage covers the reported completed turn, not a guaranteed billing total.'
+    ],
+    probes: []
+  };
+  // Reserve a unique destination before starting any paid requests; never overwrite historical runs.
+  fs.writeFileSync(resultFile, JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-eval-'));
+  try {
+    for (const probe of probes) {
+      const entry = { id: probe.id, prompt: probe.prompt, promptSha256: hash(probe.prompt) };
+      for (const arm of ['baseline', 'skill']) {
+        // Each arm and probe starts in an empty directory outside the repository.
+        const workDir = fs.mkdtempSync(path.join(tmpRoot, `${probe.id}-${arm}-`));
+        const prompt = arm === 'baseline' ? probe.prompt
+          : `You are a software engineer applying the following skill:\n\n${skillContent}\n\nTask:\n${probe.prompt}`;
+        entry[arm] = collectResponse({ prompt, model, executable, timeoutMs, workDir,
+          outputFile: path.join(tmpRoot, `${probe.id}-${arm}.txt`) });
+        entry[arm].sentPromptSha256 = hash(prompt);
+        entry[arm].grade = entry[arm].status === 'completed' ? grade(entry[arm].output, { vars: { probe: probe.id } }) : null;
+        console.log(`${probe.id} ${arm}: ${entry[arm].status === 'completed' ? (entry[arm].grade.pass ? 'HEURISTIC PASS' : 'HEURISTIC FAIL') : 'EXECUTION ERROR'}`);
+      }
+      record.probes.push(entry);
+      record.summary = summarize(record.probes);
+      fs.writeFileSync(resultFile, JSON.stringify(record, null, 2) + '\n');
+    }
+    record.completedAt = new Date().toISOString();
+    fs.writeFileSync(resultFile, JSON.stringify(record, null, 2) + '\n');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+  console.log(JSON.stringify(record.summary, null, 2));
+  console.log(`Saved: ${resultFile}`);
+  return record;
+}
 
-console.log('================================================================');
-console.log('                   EMPIRICAL PROOF SUMMARY                       ');
-console.log('================================================================');
-console.log(`Model:             gpt-6.1-sol`);
-console.log(`Baseline (no skill):        ${baselinePassCount}/${probes.length} (${empiricalRecord.summary.baselinePercent}%)`);
-console.log(`With 12-factor-craftsmanship: ${skillPassCount}/${probes.length} (${empiricalRecord.summary.skillPercent}%)`);
-console.log(`Net Measured Improvement:    +${empiricalRecord.summary.netDelta}%\n`);
-console.log(`Detailed results saved to: ${resultFilePath}`);
+function main(args) {
+  if (args.includes('--help')) {
+    console.log('Usage: node eval/gather-proof.js --model <model-id> [--output <new-file.json>]');
+    return;
+  }
+  const options = {};
+  for (let i = 0; i < args.length; i += 2) {
+    if (!['--model', '--output'].includes(args[i]) || !args[i + 1] || args[i + 1].startsWith('--')) {
+      throw new Error(`Invalid argument: ${args[i]}. Use --help.`);
+    }
+    options[args[i] === '--model' ? 'model' : 'resultFile'] = args[i + 1];
+  }
+  const record = gatherProof(options);
+  if (record.summary.executionErrors) process.exitCode = 1;
+}
+
+if (require.main === module) {
+  try { main(process.argv.slice(2)); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+}
+
+module.exports = { collectResponse, summarize, gatherProof };

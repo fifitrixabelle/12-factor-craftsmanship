@@ -32,43 +32,45 @@ async function chargeCustomer(amount: number, currency: string) {
 }
 `,
     passing: `
-interface ChargeOptions {
-  idempotencyKey?: string;
-  maxAttempts?: number;
-}
-
 async function chargeCustomer(
-  amount: number,
-  currency: string,
-  options: ChargeOptions = {}
+  amount,
+  currency,
+  options = {}
 ) {
   // Safe: Re-use the SAME logical idempotency key across all retry attempts
   const idempotencyKey = options.idempotencyKey || crypto.randomUUID();
   const maxAttempts = options.maxAttempts ?? 3;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) {
+    throw new Error('maxAttempts must be an integer from 1 to 5');
+  }
   let attempt = 0;
 
   while (attempt < maxAttempts) {
     attempt++;
+    let response;
     try {
-      const response = await fetch("https://api.paymentgateway.com/v1/charges", {
+      response = await fetch("https://api.paymentgateway.com/v1/charges", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": idempotencyKey
         },
-        body: JSON.stringify({ amount, currency })
+        body: JSON.stringify({ amount, currency }),
+        signal: AbortSignal.timeout(5000)
       });
+    } catch (err) {
+      // Fetch network failures and request deadlines are transient. Other errors propagate.
+      if (!(err instanceof TypeError) && !['TimeoutError', 'AbortError'].includes(err.name)) throw err;
+      if (attempt >= maxAttempts) throw err;
+    }
 
-      if (response.ok) {
-        return await response.json();
-      }
-
-      // Retry only transient failures (5xx, 429), not client errors (400, 401)
+    if (response) {
+      if (response.ok) return await response.json();
+      // Retry only transient failures (5xx, 429), not client errors (400, 401).
       if (response.status < 500 && response.status !== 429) {
         throw new Error(\`Non-retryable payment error: \${response.status}\`);
       }
-    } catch (err: any) {
-      if (attempt >= maxAttempts) throw err;
+      if (attempt >= maxAttempts) throw new Error(\`Retries exhausted: HTTP \${response.status}\`);
     }
 
     // Exponential backoff with jitter
@@ -110,7 +112,10 @@ export function updateProgress(job: ExportJob, progress: number): ExportJob {
   if (job.status !== 'processing') {
     throw new Error('Cannot update progress for job that is not processing');
   }
-  return { ...job, progress: Math.min(100, Math.max(0, progress)) };
+  if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
+    throw new Error('Progress must be an integer between 0 and 100');
+  }
+  return { ...job, progress };
 }
 `
   },
@@ -304,6 +309,9 @@ export function calculateOrderTotals(
 
   return { subtotal, totalDiscount, taxAmount, finalTotal };
 }
+
+// Isolated test: no database or HTTP mocks are needed.
+console.assert(calculateOrderTotals([{ price: 100, quantity: 2 }], 0.1).finalTotal === 220);
 `
   },
 
@@ -345,7 +353,7 @@ The reviewer's claim is incorrect:
 
 ### Legitimate Review Finding:
 - **Location:** \`const body = JSON.parse(event.body || '{}');\`
-- **Concrete consequence:** If a client sends an empty string or malformed JSON, \`JSON.parse\` throws an unhandled SyntaxError, returning an unexpected 500 error instead of a 400 Bad Request.
+- **Concrete consequence:** Malformed JSON causes an unhandled SyntaxError and a failed invocation instead of a deliberate 400 Bad Request. An empty string falls back to \`'{}'\` in this code.
 - **Proportionate fix:** Wrap \`JSON.parse\` in a safe helper or try/catch block and return an actionable 400 response on invalid JSON.
 `
   },

@@ -1,155 +1,90 @@
 #!/usr/bin/env node
-/**
- * 12-factor-craftsmanship Evaluation Runner
- *
- * Runs the evaluation suite against test fixtures or LLM generation outputs.
- *
- * Usage:
- *   node eval/run.js                 # Run evaluation on built-in fixtures (craftsmanship vs baseline)
- *   node eval/run.js --fixtures       # Explicitly evaluate fixtures
- *   node eval/run.js --input <file>   # Evaluate external JSON array of probe outputs
- *   node eval/run.js --markdown       # Output results formatted as GitHub Markdown
- */
-
+/** Report heuristic checks on trusted fixtures or supplied model completions. */
 const fs = require('node:fs');
-const path = require('node:path');
 const grade = require('./graders');
 const fixtures = require('./fixtures');
 const probes = require('./probes.json');
+const knownProbes = new Set(probes.map(probe => probe.id));
+const usage = 'Usage: node eval/run.js [--fixtures | --input <file.json>] [--markdown]';
 
-const args = process.argv.slice(2);
-const isMarkdown = args.includes('--markdown');
-const inputArgIdx = args.indexOf('--input');
-const inputFile = inputArgIdx !== -1 ? args[inputArgIdx + 1] : null;
-
-function runEvaluationOnArm(armName, outputsByProbe) {
-  const results = [];
-  let totalScore = 0;
-
-  for (const probeDef of probes) {
-    const probeId = probeDef.id;
-    const output = outputsByProbe[probeId] || '';
-    const outcome = grade(output, { vars: { probe: probeId } });
-
-    totalScore += outcome.score;
-    results.push({
-      id: probeId,
-      title: probeDef.title,
-      factor: probeDef.factor,
-      domain: probeDef.domain,
-      pass: outcome.pass,
-      score: outcome.score,
-      reason: outcome.reason
-    });
+function readOutputs(filename) {
+  const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
+  if (!data || typeof data !== 'object') throw new Error('Input must be a probe/output array or object map.');
+  const entries = Array.isArray(data) ? data.map(item => {
+    if (!item || typeof item !== 'object') throw new Error('Each input entry needs probe and output.');
+    return [item.probe, item.output];
+  }) : Object.entries(data);
+  const outputs = Object.create(null);
+  for (const [id, output] of entries) {
+    if (!knownProbes.has(id)) throw new Error(`Unknown input probe: ${id}`);
+    if (Object.hasOwn(outputs, id)) throw new Error(`Duplicate input probe: ${id}`);
+    if (typeof output !== 'string') throw new Error(`Input output for ${id} must be a string.`);
+    outputs[id] = output;
   }
-
-  return {
-    arm: armName,
-    score: totalScore,
-    total: probes.length,
-    percentage: Math.round((totalScore / probes.length) * 100),
-    results
-  };
+  return outputs;
 }
 
-function printAsciiTable(baseline, craftsmanship) {
-  console.log('\n========================================================================================');
-  console.log('              12-FACTOR CRAFTSMANSHIP BENCHMARK EVALUATION RESULTS                      ');
-  console.log('========================================================================================\n');
-
-  console.log(`Baseline (no skill):        ${baseline.score}/${baseline.total} passed (${baseline.percentage}%)`);
-  console.log(`With 12-factor-craftsmanship: ${craftsmanship.score}/${craftsmanship.total} passed (${craftsmanship.percentage}%)\n`);
-
-  console.log('----------------------------------------------------------------------------------------');
-  console.log(
-    'Probe ID'.padEnd(32) +
-    'Baseline'.padEnd(12) +
-    'Craftsmanship'.padEnd(16) +
-    'Craftsmanship Reason'
-  );
-  console.log('----------------------------------------------------------------------------------------');
-
-  for (let i = 0; i < probes.length; i++) {
-    const p = probes[i];
-    const b = baseline.results[i];
-    const c = craftsmanship.results[i];
-
-    const bStr = b.pass ? 'PASS' : 'FAIL';
-    const cStr = c.pass ? 'PASS' : 'FAIL';
-    const shortReason = c.reason.length > 38 ? c.reason.slice(0, 35) + '...' : c.reason;
-
-    console.log(
-      p.id.padEnd(32) +
-      bStr.padEnd(12) +
-      cStr.padEnd(16) +
-      shortReason
-    );
-  }
-
-  console.log('----------------------------------------------------------------------------------------\n');
+function evaluate(name, outputs) {
+  const results = probes.map(probe => {
+    const present = Object.hasOwn(outputs, probe.id);
+    return { id: probe.id, status: present ? 'supplied' : 'missing',
+      ...(present ? grade(outputs[probe.id], { vars: { probe: probe.id } }) : { pass: false, score: 0, reason: 'No completion supplied.' }) };
+  });
+  return { name, results, supplied: results.filter(r => r.status === 'supplied').length,
+    score: results.reduce((sum, r) => sum + r.score, 0) };
 }
 
-function printMarkdownReport(baseline, craftsmanship) {
-  console.log('# 12-Factor Craftsmanship Evaluation Report\n');
-  console.log('## Summary\n');
-  console.log('| Arm | Score | Percentage | Status |');
-  console.log('|---|---|---|---|');
-  console.log(`| **Baseline (no skill)** | ${baseline.score}/${baseline.total} | ${baseline.percentage}% | Failing safety & maintainability checks |`);
-  console.log(`| **12-factor-craftsmanship** | ${craftsmanship.score}/${craftsmanship.total} | ${craftsmanship.percentage}% | All safety and design checks passed |`);
-  console.log('\n## Detailed Results by Factor & Domain\n');
-  console.log('| Factor & Domain | Probe ID | Baseline | Skill | Verified Outcome |');
-  console.log('|---|---|---|---|---|');
-
-  for (let i = 0; i < probes.length; i++) {
-    const p = probes[i];
-    const b = baseline.results[i];
-    const c = craftsmanship.results[i];
-
-    const bBadge = b.pass ? 'PASS' : 'FAIL';
-    const cBadge = c.pass ? 'PASS' : 'FAIL';
-
-    console.log(
-      `| ${p.domain} (${p.factor}) | \`${p.id}\` | ${bBadge} | ${cBadge} | ${c.reason} |`
-    );
+function printReport(title, arms, markdown) {
+  console.log(`${markdown ? '# ' : ''}${title}\n`);
+  console.log('Heuristic text checks; passing does not establish runtime safety or model improvement.\n');
+  for (const arm of arms) {
+    console.log(`${arm.name}: ${arm.score}/${arm.supplied} heuristic passes; ${arm.supplied}/${probes.length} probes supplied.`);
   }
-  console.log('\n');
+  console.log('');
+  const rows = probes.map((probe, i) => [probe.id, ...arms.map(arm => {
+    const result = arm.results[i];
+    return result.status === 'missing' ? 'MISSING' : result.pass ? 'PASS' : 'FAIL';
+  })]);
+  const headers = ['Probe', ...arms.map(arm => arm.name)];
+  if (markdown) {
+    console.log(`| ${headers.join(' | ')} |`);
+    console.log(`| ${headers.map(() => '---').join(' | ')} |`);
+    for (const row of rows) console.log(`| ${row.join(' | ')} |`);
+  } else {
+    for (const row of [headers, ...rows]) console.log(row.map((cell, i) => cell.padEnd(i === 0 ? 34 : 24)).join(''));
+  }
+  for (const arm of arms) {
+    for (const result of arm.results.filter(r => r.status === 'supplied' && !r.pass)) {
+      console.log(`\n${arm.name} / ${result.id}: ${result.reason}`);
+    }
+  }
 }
 
-function main() {
+function main(args) {
+  let inputFile;
+  let fixturesRequested = false;
+  const markdown = args.includes('--markdown');
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--markdown') continue;
+    if (args[i] === '--fixtures') { fixturesRequested = true; continue; }
+    if (args[i] === '--help') { console.log(usage); return; }
+    if (args[i] === '--input' && args[i + 1] && !args[i + 1].startsWith('--') && !inputFile) {
+      inputFile = args[++i];
+    } else throw new Error(`Invalid argument: ${args[i]}. ${usage}`);
+  }
+  if (inputFile && fixturesRequested) throw new Error(`Choose --fixtures or --input. ${usage}`);
   if (inputFile) {
-    const raw = fs.readFileSync(path.resolve(inputFile), 'utf8');
-    const data = JSON.parse(raw);
-    const outputsByProbe = {};
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        if (item.probe && item.output) outputsByProbe[item.probe] = item.output;
-      }
-    } else {
-      Object.assign(outputsByProbe, data);
-    }
-    const evalResult = runEvaluationOnArm('custom_input', outputsByProbe);
-    console.log(`Score: ${evalResult.score}/${evalResult.total} (${evalResult.percentage}%)`);
-    for (const r of evalResult.results) {
-      console.log(`- [${r.pass ? 'PASS' : 'FAIL'}] ${r.id}: ${r.reason}`);
-    }
+    printReport('Supplied completions: heuristic report', [evaluate('Custom input', readOutputs(inputFile))], markdown);
     return;
   }
-
-  const baselineOutputs = {};
-  const craftOutputs = {};
-  for (const p of probes) {
-    baselineOutputs[p.id] = (fixtures[p.id] && fixtures[p.id].failing) || '';
-    craftOutputs[p.id] = (fixtures[p.id] && fixtures[p.id].passing) || '';
-  }
-
-  const baselineEval = runEvaluationOnArm('baseline', baselineOutputs);
-  const craftEval = runEvaluationOnArm('12-factor-craftsmanship', craftOutputs);
-
-  if (isMarkdown) {
-    printMarkdownReport(baselineEval, craftEval);
-  } else {
-    printAsciiTable(baselineEval, craftEval);
-  }
+  const outputs = kind => Object.fromEntries(probes.map(p => [p.id, fixtures[p.id][kind]]));
+  printReport('Fixture self-check (hand-authored examples)', [
+    evaluate('Negative fixtures', outputs('failing')),
+    evaluate('Positive fixtures', outputs('passing'))
+  ], markdown);
 }
 
-main();
+if (require.main === module) {
+  try { main(process.argv.slice(2)); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+}

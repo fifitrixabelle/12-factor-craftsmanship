@@ -1,0 +1,26 @@
+[tools]
+node = "24.22.2"
+
+[tasks.test]
+description = "Run regression and repository consistency tests"
+run = "npm test"
+
+[tasks.fixtures]
+description = "Report heuristic checks on hand-authored fixtures"
+run = "node eval/run.js --fixtures"
+
+[tasks.eval]
+description = "Grade saved completions: mise run eval --input <file.json> [--markdown]"
+run = "node eval/run.js"
+
+[tasks.benchmark]
+description = "Run 20 paid Codex sessions: mise run benchmark --model <model-id>"
+run = "node eval/gather-proof.js"
+
+[tasks."plugin:validate"]
+description = "Validate plugin metadata with an installed Claude Code CLI"
+run = "claude plugin validate --strict ."
+
+[tasks.check]
+description = "Run all local checks without model calls"
+depends = ["test", "fixtures"]
