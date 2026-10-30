@@ -8,14 +8,14 @@ const crypto = require('node:crypto');
 const grade = require('./graders');
 const probes = require('./probes.json');
 
-function collectResponse({ prompt, model, workDir, outputFile, executable = 'codex', timeoutMs = 120000 }) {
+function collectResponse({ prompt, model, workDir, outputFile, executable = 'codex', timeoutMs = 120000, sandbox = 'read-only' }) {
   // Never let an old answer turn a failed invocation into a successful completion.
   fs.rmSync(outputFile, { force: true });
   const started = performance.now();
   const result = spawnSync(executable, [
     'exec', '--model', model, '-c', 'model_reasoning_effort="low"',
     '--ignore-user-config', '--ephemeral', '--skip-git-repo-check',
-    '--sandbox', 'read-only', '--cd', workDir, '--json',
+    '--sandbox', sandbox, '--cd', workDir, '--json',
     '--output-last-message', outputFile, '-'
   ], {
     input: prompt, encoding: 'utf8', cwd: workDir, timeout: timeoutMs, killSignal: 'SIGKILL',

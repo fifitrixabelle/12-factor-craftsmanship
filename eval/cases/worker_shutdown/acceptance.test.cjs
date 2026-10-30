@@ -6,6 +6,8 @@ const harness = `
 const { start } = require(process.argv[1]);
 const mode = process.argv[2];
 let pending; let reads = 0;
+let finishWork;
+process.on('SIGTERM', () => finishWork?.());
 const keepAlive = setInterval(() => {}, 1000);
 const queue = {
   receive() {
@@ -17,10 +19,11 @@ const queue = {
   close() { console.log('CLOSED'); pending?.(null); }
 };
 async function handle() {
-  console.log('START');
+  if (mode === 'work') {
+    await new Promise(resolve => { finishWork = resolve; console.log('START'); });
+  } else console.log('START');
   if (mode === 'error') throw new Error('job failed');
   if (mode === 'hang') await new Promise(() => {});
-  else await new Promise(resolve => setTimeout(resolve, 80));
   console.log('DONE');
 }
 start(queue, handle, { shutdownMs: 200 }).then(() => clearInterval(keepAlive), e => {
